@@ -1,7 +1,10 @@
 package com.github.bknackkr.koppainter;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.pepsoft.util.mdc.MDCCapturingRuntimeException;
@@ -85,6 +88,23 @@ public final class BiomeResolver {
             throw new MDCCapturingRuntimeException("Numerical biome ID out of valid range (0-255): " + id);
         }
         return (new BiomeEntry(id, ("minecraft:biome_" + id), ("Biome " + id)));
+    }
+
+    /**
+     * Returns a sorted, unmodifiable list of all standard Minecraft biomes.
+     *
+     * @return The list of standard biomes, sorted alphabetically by name.
+     */
+    public static List<BiomeEntry> getAllStandardBiomes() {
+        Map<String, BiomeEntry> unique = new HashMap<>();
+        for (BiomeEntry entry : BIOMES_BY_ID.values()) {
+            if ((!unique.containsKey(entry.getModernId()))) {
+                unique.put(entry.getModernId(), entry);
+            }
+        }
+        List<BiomeEntry> list = new ArrayList<>(unique.values());
+        list.sort(Comparator.comparing(BiomeEntry::getName));
+        return (Collections.unmodifiableList(list));
     }
 
     private static boolean isInteger(String text) {

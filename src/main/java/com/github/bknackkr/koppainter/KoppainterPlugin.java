@@ -22,6 +22,7 @@ public class KoppainterPlugin extends AbstractPlugin implements OperationProvide
     public KoppainterPlugin() {
         super(NAME, VERSION);
         colorBiomeMap = ColorBiomeMap.loadDefault();
+        operations = Collections.singletonList(new KoppainterOperation(this));
     }
 
     /**
@@ -42,7 +43,7 @@ public class KoppainterPlugin extends AbstractPlugin implements OperationProvide
      */
     @Override
     public List<Operation> getOperations() {
-        return (OPERATIONS);
+        return (operations);
     }
 
     /**
@@ -67,11 +68,10 @@ public class KoppainterPlugin extends AbstractPlugin implements OperationProvide
     }
 
     private ColorBiomeMap colorBiomeMap;
+    private final List<Operation> operations;
 
     /**
      * The human-readable display name of the plugin.
      */
     public static final String NAME = "Köppainter";
-
-    private static final List<Operation> OPERATIONS = Collections.emptyList();
 }

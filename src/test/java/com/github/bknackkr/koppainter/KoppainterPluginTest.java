@@ -24,6 +24,8 @@ public class KoppainterPluginTest {
         assertEquals("Köppainter", plugin.getName());
         assertNotNull(plugin.getVersion());
         assertNotNull(plugin.getOperations());
+        assertEquals(1, plugin.getOperations().size());
+        assertEquals("Import Köppen Climate Map", plugin.getOperations().get(0).getName());
         assertNotNull(plugin.getColorBiomeMap());
         assertEquals("minecraft:desert", plugin.getColorBiomeMap().getBiome("FF0000").getModernId());
     }
