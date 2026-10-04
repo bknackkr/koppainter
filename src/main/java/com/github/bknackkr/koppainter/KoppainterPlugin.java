@@ -2,6 +2,7 @@ package com.github.bknackkr.koppainter;
 
 import java.util.Collections;
 import java.util.List;
+import org.pepsoft.util.mdc.MDCCapturingRuntimeException;
 import org.pepsoft.worldpainter.WPContext;
 import org.pepsoft.worldpainter.operations.Operation;
 import org.pepsoft.worldpainter.plugins.AbstractPlugin;
@@ -20,6 +21,7 @@ public class KoppainterPlugin extends AbstractPlugin implements OperationProvide
      */
     public KoppainterPlugin() {
         super(NAME, VERSION);
+        colorBiomeMap = ColorBiomeMap.loadDefault();
     }
 
     /**
@@ -29,7 +31,8 @@ public class KoppainterPlugin extends AbstractPlugin implements OperationProvide
      */
     @Override
     public void init(WPContext context) {
-        // Context initialisation will be wired here as features are added
+        // Load user-defined biomes.properties if available, falling back to bundled defaults
+        colorBiomeMap = ColorBiomeMap.loadUserOrDefault(null);
     }
 
     /**
@@ -41,6 +44,29 @@ public class KoppainterPlugin extends AbstractPlugin implements OperationProvide
     public List<Operation> getOperations() {
         return (OPERATIONS);
     }
+
+    /**
+     * Returns the active color-to-biome mapping configuration.
+     *
+     * @return The active color-to-biome mapping.
+     */
+    public ColorBiomeMap getColorBiomeMap() {
+        return (colorBiomeMap);
+    }
+
+    /**
+     * Sets the active color-to-biome mapping configuration.
+     *
+     * @param colorBiomeMap The new color-to-biome mapping.
+     */
+    public void setColorBiomeMap(ColorBiomeMap colorBiomeMap) {
+        if ((colorBiomeMap == null)) {
+            throw new MDCCapturingRuntimeException("ColorBiomeMap cannot be null");
+        }
+        this.colorBiomeMap = colorBiomeMap;
+    }
+
+    private ColorBiomeMap colorBiomeMap;
 
     /**
      * The human-readable display name of the plugin.

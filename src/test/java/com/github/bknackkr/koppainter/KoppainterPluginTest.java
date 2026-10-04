@@ -24,5 +24,20 @@ public class KoppainterPluginTest {
         assertEquals("Köppainter", plugin.getName());
         assertNotNull(plugin.getVersion());
         assertNotNull(plugin.getOperations());
+        assertNotNull(plugin.getColorBiomeMap());
+        assertEquals("minecraft:desert", plugin.getColorBiomeMap().getBiome("FF0000").getModernId());
+    }
+
+    /**
+     * Verifies setting a custom color biome map on the plugin.
+     */
+    @Test
+    public void testSetColorBiomeMap() {
+        KoppainterPlugin plugin = new KoppainterPlugin();
+        ColorBiomeMap customMap = new ColorBiomeMap();
+        customMap.put("123456", "plains");
+        plugin.setColorBiomeMap(customMap);
+        assertEquals(customMap, plugin.getColorBiomeMap());
+        assertEquals("minecraft:plains", plugin.getColorBiomeMap().getBiome("123456").getModernId());
     }
 }
