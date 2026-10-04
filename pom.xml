@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.pepsoft.worldpainter</groupId>
+        <artifactId>PluginParent</artifactId>
+        <version>2.0.0</version>
+    </parent>
+
+    <groupId>com.github.bknackkr</groupId>
+    <artifactId>koppainter</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Köppainter</name>
+    <description>A WorldPainter plugin that allows the conversion of Köppen climate maps into Minecraft biomes, intended for use with exported World Climate Lab maps.</description>
+    <url>https://github.com/bknackkr/koppainter</url>
+    <inceptionYear>2024</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>GNU General Public License, version 3</name>
+            <url>https://www.gnu.org/licenses/gpl-3.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Benjamin Knack-Kroening</name>
+            <email>159393877+bknackkr@users.noreply.github.com</email>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/bknackkr/koppainter.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com:bknackkr/koppainter.git</developerConnection>
+        <url>https://github.com/bknackkr/koppainter</url>
+    </scm>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <maven.resources.propertiesEncoding>UTF-8</maven.resources.propertiesEncoding>
+        <junit-jupiter.version>5.10.2</junit-jupiter.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit-jupiter.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <includes>
+                    <include>com.github.bknackkr.koppainter.properties</include>
+                    <include>org.pepsoft.worldpainter.plugins</include>
+                </includes>
+                <filtering>true</filtering>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>com.github.bknackkr.koppainter.properties</exclude>
+                    <exclude>org.pepsoft.worldpainter.plugins</exclude>
+                </excludes>
+                <filtering>false</filtering>
+            </resource>
+        </resources>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <configuration>
+                    <propertiesEncoding>UTF-8</propertiesEncoding>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- Enable this profile and execute the test phase in order to run your plugin with WorldPainter. -->
+        <profile>
+            <id>testWithWorldPainter</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.pepsoft.worldpainter</groupId>
+                    <artifactId>WPGUI</artifactId>
+                    <!-- Update this to the version of WorldPainter you wish to test with: -->
+                    <version>2.25.0</version>
+                    <scope>compile</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.2.0</version>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <phase>test</phase>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <executable>java</executable>
+                            <arguments>
+                                <argument>-classpath</argument>
+                                <classpath/>
+                                <!-- Uncomment this to enable debugging. Change suspend=n to suspend=y if you want to debug plugin loading or initialisation: -->
+                                <!--argument>-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005</argument-->
+                                <!-- These exports are needed from Java 9+ to make the JIDE GUI framework work: -->
+                                <argument>--add-exports</argument>
+                                <argument>java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED</argument>
+                                <argument>--add-exports</argument>
+                                <argument>java.desktop/javax.swing.plaf.synth=ALL-UNNAMED</argument>
+                                <argument>--add-exports</argument>
+                                <argument>java.desktop/sun.awt.shell=ALL-UNNAMED</argument>
+                                <argument>--add-exports</argument>
+                                <argument>java.desktop/sun.swing=ALL-UNNAMED</argument>
+                                <argument>--add-exports</argument>
+                                <argument>java.desktop/sun.awt=ALL-UNNAMED</argument>
+                                <argument>--add-exports</argument>
+                                <argument>java.desktop/sun.awt.windows=ALL-UNNAMED</argument>
+                                <argument>--add-exports</argument>
+                                <argument>java.desktop/sun.awt.image=ALL-UNNAMED</argument>
+                                <argument>--add-exports</argument>
+                                <argument>java.base/sun.security.action=ALL-UNNAMED</argument>
+                                <argument>org.pepsoft.worldpainter.Main</argument>
+                            </arguments>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

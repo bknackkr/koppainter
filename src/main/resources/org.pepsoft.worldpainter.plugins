@@ -1,0 +1,7 @@
+{
+  "name": "Köppainter",
+  "version": "${project.version}",
+  "classes": [
+    "com.github.bknackkr.koppainter.KoppainterPlugin"
+  ]
+}
