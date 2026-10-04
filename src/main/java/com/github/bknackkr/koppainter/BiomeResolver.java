@@ -146,20 +146,108 @@ public final class BiomeResolver {
 
     private static Map<Integer, BiomeEntry> initBiomesById() {
         Map<Integer, BiomeEntry> byId = new HashMap<>();
-        String[] modernIds = Minecraft1_21Biomes.MODERN_IDS;
-        String[] biomeNames = Minecraft1_21Biomes.BIOME_NAMES;
+        try {
+            String[] modernIds = Minecraft1_21Biomes.MODERN_IDS;
+            String[] biomeNames = Minecraft1_21Biomes.BIOME_NAMES;
 
-        for (int i = 0; (i < 256); i++) {
-            String modernId = ((i < modernIds.length) ? modernIds[i] : null);
-            if ((modernId != null)) {
-                String displayName = ((i < biomeNames.length) ? biomeNames[i] : null);
-                if ((displayName == null)) {
-                    displayName = modernId;
+            for (int i = 0; (i < 256); i++) {
+                String modernId = ((i < modernIds.length) ? modernIds[i] : null);
+                if ((modernId != null)) {
+                    String displayName = ((i < biomeNames.length) ? biomeNames[i] : null);
+                    if ((displayName == null)) {
+                        displayName = modernId;
+                    }
+                    byId.put(i, new BiomeEntry(i, modernId, displayName));
                 }
-                byId.put(i, new BiomeEntry(i, modernId, displayName));
             }
+        } catch (Throwable ignored) {
+            // If WorldPainter internal patterns cannot be loaded (e.g. standalone execution), populate fallback
+            populateFallbackBiomes(byId);
         }
         return (Collections.unmodifiableMap(byId));
+    }
+
+    private static void populateFallbackBiomes(Map<Integer, BiomeEntry> map) {
+        Object[][] biomes = {
+                {0, "minecraft:ocean", "Ocean"},
+                {1, "minecraft:plains", "Plains"},
+                {2, "minecraft:desert", "Desert"},
+                {3, "minecraft:windswept_hills", "Windswept Hills"},
+                {4, "minecraft:forest", "Forest"},
+                {5, "minecraft:taiga", "Taiga"},
+                {6, "minecraft:swamp", "Swamp"},
+                {7, "minecraft:river", "River"},
+                {8, "minecraft:nether_wastes", "Nether Wastes"},
+                {9, "minecraft:the_end", "The End"},
+                {10, "minecraft:frozen_ocean", "Frozen Ocean"},
+                {11, "minecraft:frozen_river", "Frozen River"},
+                {12, "minecraft:snowy_plains", "Snowy Plains"},
+                {13, "minecraft:snowy_mountains", "Snowy Mountains"},
+                {14, "minecraft:mushroom_fields", "Mushroom Fields"},
+                {15, "minecraft:mushroom_field_shore", "Mushroom Field Shore"},
+                {16, "minecraft:beach", "Beach"},
+                {17, "minecraft:desert_hills", "Desert Hills"},
+                {18, "minecraft:wooded_hills", "Wooded Hills"},
+                {19, "minecraft:taiga_hills", "Taiga Hills"},
+                {21, "minecraft:jungle", "Jungle"},
+                {22, "minecraft:jungle_hills", "Jungle Hills"},
+                {23, "minecraft:sparse_jungle", "Sparse Jungle"},
+                {24, "minecraft:deep_ocean", "Deep Ocean"},
+                {25, "minecraft:stony_shore", "Stony Shore"},
+                {26, "minecraft:snowy_beach", "Snowy Beach"},
+                {27, "minecraft:birch_forest", "Birch Forest"},
+                {28, "minecraft:birch_forest_hills", "Birch Forest Hills"},
+                {29, "minecraft:dark_forest", "Dark Forest"},
+                {30, "minecraft:snowy_taiga", "Snowy Taiga"},
+                {31, "minecraft:snowy_taiga_hills", "Snowy Taiga Hills"},
+                {32, "minecraft:old_growth_pine_taiga", "Old Growth Pine Taiga"},
+                {33, "minecraft:giant_tree_taiga_hills", "Giant Tree Taiga Hills"},
+                {34, "minecraft:wooded_mountains", "Wooded Mountains"},
+                {35, "minecraft:savanna", "Savanna"},
+                {36, "minecraft:savanna_plateau", "Savanna Plateau"},
+                {37, "minecraft:badlands", "Badlands"},
+                {38, "minecraft:wooded_badlands", "Wooded Badlands"},
+                {39, "minecraft:badlands_plateau", "Badlands Plateau"},
+                {44, "minecraft:warm_ocean", "Warm Ocean"},
+                {45, "minecraft:lukewarm_ocean", "Lukewarm Ocean"},
+                {46, "minecraft:cold_ocean", "Cold Ocean"},
+                {47, "minecraft:deep_warm_ocean", "Deep Warm Ocean"},
+                {48, "minecraft:deep_lukewarm_ocean", "Deep Lukewarm Ocean"},
+                {49, "minecraft:deep_cold_ocean", "Deep Cold Ocean"},
+                {50, "minecraft:deep_frozen_ocean", "Deep Frozen Ocean"},
+                {127, "minecraft:the_void", "The Void"},
+                {129, "minecraft:sunflower_plains", "Sunflower Plains"},
+                {130, "minecraft:desert_lakes", "Desert Lakes"},
+                {131, "minecraft:windswept_gravelly_hills", "Windswept Gravelly Hills"},
+                {132, "minecraft:flower_forest", "Flower Forest"},
+                {140, "minecraft:ice_spikes", "Ice Spikes"},
+                {160, "minecraft:old_growth_spruce_taiga", "Old Growth Spruce Taiga"},
+                {163, "minecraft:windswept_savanna", "Windswept Savanna"},
+                {165, "minecraft:eroded_badlands", "Eroded Badlands"},
+                {168, "minecraft:bamboo_jungle", "Bamboo Jungle"},
+                {170, "minecraft:soul_sand_valley", "Soul Sand Valley"},
+                {171, "minecraft:crimson_forest", "Crimson Forest"},
+                {172, "minecraft:warped_forest", "Warped Forest"},
+                {173, "minecraft:basalt_deltas", "Basalt Deltas"},
+                {174, "minecraft:dripstone_caves", "Dripstone Caves"},
+                {175, "minecraft:lush_caves", "Lush Caves"},
+                {177, "minecraft:meadow", "Meadow"},
+                {178, "minecraft:grove", "Grove"},
+                {179, "minecraft:snowy_slopes", "Snowy Slopes"},
+                {180, "minecraft:jagged_peaks", "Jagged Peaks"},
+                {181, "minecraft:frozen_peaks", "Frozen Peaks"},
+                {182, "minecraft:stony_peaks", "Stony Peaks"},
+                {183, "minecraft:deep_dark", "Deep Dark"},
+                {184, "minecraft:mangrove_swamp", "Mangrove Swamp"},
+                {185, "minecraft:cherry_grove", "Cherry Grove"},
+                {186, "minecraft:pale_garden", "Pale Garden"}
+        };
+        for (Object[] biome : biomes) {
+            int id = (Integer) biome[0];
+            String modernId = (String) biome[1];
+            String name = (String) biome[2];
+            map.put(id, new BiomeEntry(id, modernId, name));
+        }
     }
 
     private static Map<String, BiomeEntry> initBiomesByKey(Map<Integer, BiomeEntry> byId) {

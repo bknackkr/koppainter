@@ -471,6 +471,28 @@ public class KoppainterDialog extends WorldPainterDialog {
         return (((r << 16) | (g << 8) | b));
     }
 
+    /**
+     * Standalone entry point allowing direct testing and previewing of the dialog.
+     *
+     * @param args Command-line arguments; optional first argument is an image file path to preload.
+     */
+    public static void main(String[] args) {
+        if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
+            org.pepsoft.worldpainter.Configuration.setInstance(new org.pepsoft.worldpainter.Configuration());
+        }
+        try {
+            javax.swing.UIManager.setLookAndFeel(javax.swing.UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception ignored) {
+            // Keep default Look & Feel if system L&F is unavailable
+        }
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            File preload = (((args.length > 0) && (args[0] != null)) ? new File(args[0]) : null);
+            KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadUserOrDefault(null), preload);
+            dialog.setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
+            dialog.setVisible(true);
+        });
+    }
+
     private final ColorBiomeMap colorBiomeMap;
 
     private BufferedImage climateImage;

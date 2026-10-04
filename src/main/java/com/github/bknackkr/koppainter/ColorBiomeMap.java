@@ -481,10 +481,17 @@ public final class ColorBiomeMap {
             }
         }
 
-        // 3. User home directory ~/.worldpainter/plugins/koppainter/biomes.properties
+        // 3. User configuration file in WorldPainter plugins directory
         Path defaultUserFile = getDefaultUserFilePath();
         if ((Files.exists(defaultUserFile))) {
             return (load(defaultUserFile));
+        }
+
+        // Also check ~/.worldpainter/plugins/koppainter if default was APPDATA
+        String userHome = System.getProperty("user.home", ".");
+        Path fallbackUserFile = Paths.get(userHome, ".worldpainter", "plugins", "koppainter", USER_FILE_NAME);
+        if ((!fallbackUserFile.equals(defaultUserFile)) && (Files.exists(fallbackUserFile))) {
+            return (load(fallbackUserFile));
         }
 
         // 4. Local working directory ./biomes.properties
@@ -525,9 +532,19 @@ public final class ColorBiomeMap {
     /**
      * Returns the standard directory where user-definable plugin configurations are stored.
      *
+     * <p>On Windows, checks {@code %APPDATA%\WorldPainter\plugins\koppainter} if available,
+     * otherwise defaults to {@code ~/.worldpainter/plugins/koppainter}.</p>
+     *
      * @return The user config directory path.
      */
     public static Path getDefaultUserDirectory() {
+        String appData = System.getenv("APPDATA");
+        if ((appData != null) && (!appData.isBlank())) {
+            Path winPluginsDir = Paths.get(appData, "WorldPainter", "plugins");
+            if ((Files.isDirectory(winPluginsDir))) {
+                return (winPluginsDir.resolve("koppainter"));
+            }
+        }
         String userHome = System.getProperty("user.home", ".");
         return (Paths.get(userHome, ".worldpainter", "plugins", "koppainter"));
     }
