@@ -20,8 +20,21 @@ To execute the unit tests:
 ```
 
 ### Test with WorldPainter
-To test the plugin directly inside WorldPainter (launches WorldPainter with the plugin on the classpath):
+To test the plugin directly inside WorldPainter (launches WorldPainter with the plugin on the classpath). These scripts automatically locate your WorldPainter installation, install the required commercial JIDE GUI libraries (`jide-common` and `jide-dock`) into your local Maven cache (`~/.m2/repository`), and launch WorldPainter:
 
+On Windows (PowerShell / CMD):
+```powershell
+./test-with-worldpainter.ps1
+# or in Command Prompt:
+test-with-worldpainter.cmd
+```
+
+On Linux / macOS:
+```shell
+./test-with-worldpainter.sh
+```
+
+Or manually with Maven (requires JIDE libraries to be pre-installed in your local repository):
 ```shell
 ./mvnw test -P testWithWorldPainter
 ```
