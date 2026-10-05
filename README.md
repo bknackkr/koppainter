@@ -1,5 +1,5 @@
 # koppainter
-A WorldPainter plugin that allows the conversion of Köppen climate maps into Minecraft biomes, intended for use with exported World Climate Lab maps.
+A WorldPainter plugin that allows the conversion of climate maps into Minecraft biomes, intended for use with exported World Climate Lab maps.
 
 ## Building and Testing
 
