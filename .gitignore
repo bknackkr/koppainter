@@ -18,3 +18,7 @@ buildNumber.properties
 
 # AI agents
 .agents/
+
+# Workspace
+run-worldpainter.ps1
+run-worldpainter.bat
