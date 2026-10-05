@@ -25,6 +25,15 @@ To test the plugin directly inside WorldPainter (launches WorldPainter with the 
 ```shell
 ./mvnw test -P testWithWorldPainter
 ```
+## Usage
+
+This plugin is intended to be used with Köppen climate maps exported from [World Climate Lab](https://store.steampowered.com/app/4875150/World_Climate_Lab/), but can be used with any image.
+
+The color definitions are entirely user-definable and are stored in a properties file, so you can draw custom maps with arbitrary colors and it will still work.
+
+![Color Map Example](img/ColorMapExample.png)
+
+
 
 ## Color-to-Biome Definitions
 
