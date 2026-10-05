@@ -322,4 +322,45 @@ public class KoppainterDialogTest {
 
         dialog.dispose();
     }
+
+    /**
+     * Verifies that preselecting a file without a parent path does not trigger a NullPointerException.
+     */
+    @Test
+    public void testPreselectRelativeFileWithoutParent() {
+        if ((GraphicsEnvironment.isHeadless())) {
+            return;
+        }
+
+        if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
+            org.pepsoft.worldpainter.Configuration.setInstance(new org.pepsoft.worldpainter.Configuration());
+        }
+
+        // Relative file with null getParentFile()
+        File parentlessFile = new File("nonexistent_climate_test.png");
+        assertNull(parentlessFile.getParentFile());
+
+        KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadDefault(), parentlessFile);
+        assertNull(dialog.getSelectedFile());
+        dialog.dispose();
+    }
+
+    /**
+     * Verifies that dispose cleanly clears preview and dialog resources.
+     */
+    @Test
+    public void testDisposeCleansUp() {
+        if ((GraphicsEnvironment.isHeadless())) {
+            return;
+        }
+
+        if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
+            org.pepsoft.worldpainter.Configuration.setInstance(new org.pepsoft.worldpainter.Configuration());
+        }
+
+        KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadDefault());
+        dialog.dispose();
+        assertNull(dialog.getClimateImage());
+        assertNull(dialog.getBiomePreviewImage());
+    }
 }

@@ -36,8 +36,13 @@ public final class BiomeResolver {
 
         // Check if the identifier is a numerical biome ID
         if ((isInteger(trimmed))) {
-            int numericId = Integer.parseInt(trimmed);
-            return (resolveById(numericId));
+            try {
+                int numericId = Integer.parseInt(trimmed);
+                return (resolveById(numericId));
+            } catch (NumberFormatException exception) {
+                throw new MDCCapturingRuntimeException("Numerical biome ID out of valid integer range: "
+                        + trimmed, exception);
+            }
         }
 
         String lowerKey = trimmed.toLowerCase(Locale.ROOT);

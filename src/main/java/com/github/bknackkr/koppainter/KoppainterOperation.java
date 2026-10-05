@@ -4,7 +4,9 @@ import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyVetoException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import javax.swing.SwingUtilities;
 import org.pepsoft.util.mdc.MDCCapturingRuntimeException;
 import org.pepsoft.worldpainter.Dimension;
@@ -98,6 +100,16 @@ public class KoppainterOperation extends AbstractOperation {
             double tolerance,
             boolean adjacentOnly,
             java.util.function.BiConsumer<Integer, String> progressConsumer) {
+        if ((dimension == null)) {
+            throw new MDCCapturingRuntimeException("Dimension cannot be null");
+        }
+        if ((climate == null)) {
+            throw new MDCCapturingRuntimeException("Climate image cannot be null");
+        }
+        if ((map == null)) {
+            throw new MDCCapturingRuntimeException("ColorBiomeMap cannot be null");
+        }
+
         int width = climate.getWidth();
         int height = climate.getHeight();
         // Align the biome map origin (0, 0) with the top-left corner of the WorldPainter map
@@ -106,45 +118,74 @@ public class KoppainterOperation extends AbstractOperation {
         int originY = 0;
 
         Map<Integer, Integer> biomeIdCache = new HashMap<>();
+        Set<Tile> touchedTiles = new HashSet<>();
         int lastPercent = -1;
 
-        for (int y = 0; (y < height); y++) {
-            int worldY = (originY + y);
-            for (int x = 0; (x < width); x++) {
-                int worldX = (originX + x);
-                int rgb = (climate.getRGB(x, y) & 0x00FFFFFF);
+        int lastTileX = Integer.MIN_VALUE;
+        int lastTileY = Integer.MIN_VALUE;
+        Tile currentTile = null;
 
-                int biomeId;
-                BiomeEntry biome = map.getBiome(rgb);
-                if ((biome != null)) {
-                    biomeId = (((biome.getId() >= 0)) ? biome.getId() : defaultBiomeId);
-                } else if (adjacentOnly) {
-                    if ((tolerance > 0.0)) {
-                        biome = map.findNearestAdjacentBiome(climate, x, y, tolerance);
-                    }
-                    biomeId = (((biome != null) && (biome.getId() >= 0)) ? biome.getId() : defaultBiomeId);
-                } else {
-                    biomeId = biomeIdCache.computeIfAbsent(rgb, color -> {
-                        BiomeEntry b = null;
+        try {
+            for (int y = 0; (y < height); y++) {
+                if ((Thread.currentThread().isInterrupted())) {
+                    throw new MDCCapturingRuntimeException("Biome application task was cancelled");
+                }
+                int worldY = (originY + y);
+                for (int x = 0; (x < width); x++) {
+                    int worldX = (originX + x);
+                    int rgb = (climate.getRGB(x, y) & 0x00FFFFFF);
+
+                    int biomeId;
+                    BiomeEntry biome = map.getBiome(rgb);
+                    if ((biome != null)) {
+                        biomeId = (((biome.getId() >= 0)) ? biome.getId() : defaultBiomeId);
+                    } else if (adjacentOnly) {
                         if ((tolerance > 0.0)) {
-                            b = map.findNearestBiome(color, tolerance);
+                            biome = map.findNearestAdjacentBiome(climate, x, y, tolerance);
                         }
-                        return (((b != null) && (b.getId() >= 0)) ? b.getId() : defaultBiomeId);
-                    });
+                        biomeId = (((biome != null) && (biome.getId() >= 0)) ? biome.getId() : defaultBiomeId);
+                    } else {
+                        biomeId = biomeIdCache.computeIfAbsent(rgb, color -> {
+                            BiomeEntry b = null;
+                            if ((tolerance > 0.0)) {
+                                b = map.findNearestBiome(color, tolerance);
+                            }
+                            return (((b != null) && (b.getId() >= 0)) ? b.getId() : defaultBiomeId);
+                        });
+                    }
+
+                    int tileX = (worldX >> 7);
+                    int tileY = (worldY >> 7);
+                    if ((currentTile == null) || (tileX != lastTileX) || (tileY != lastTileY)) {
+                        currentTile = dimension.getTile(tileX, tileY);
+                        lastTileX = tileX;
+                        lastTileY = tileY;
+                        if ((currentTile != null) && (touchedTiles.add(currentTile))) {
+                            currentTile.inhibitEvents();
+                        }
+                    }
+
+                    if ((currentTile != null)) {
+                        currentTile.setLayerValue(Biome.INSTANCE, (worldX & 127), (worldY & 127), biomeId);
+                    }
                 }
 
-                Tile tile = dimension.getTile((worldX >> 7), (worldY >> 7));
-                if ((tile != null)) {
-                    tile.setLayerValue(Biome.INSTANCE, (worldX & 127), (worldY & 127), biomeId);
+                if ((progressConsumer != null)) {
+                    int percent = (int) ((((y + 1) * 100.0)) / height);
+                    if (((percent != lastPercent) || (y == (height - 1)))) {
+                        progressConsumer.accept(percent, "Applying biomes to map: row " + (y + 1) + " of " + height
+                                + " (" + percent + "%)");
+                        lastPercent = percent;
+                    }
                 }
             }
-
-            if ((progressConsumer != null)) {
-                int percent = (int) ((((y + 1) * 100.0)) / height);
-                if (((percent != lastPercent) || (y == (height - 1)))) {
-                    progressConsumer.accept(percent, "Applying biomes to map: row " + (y + 1) + " of " + height
-                            + " (" + percent + "%)");
-                    lastPercent = percent;
+            dimension.armSavePoint();
+        } finally {
+            for (Tile tile : touchedTiles) {
+                try {
+                    tile.releaseEvents();
+                } catch (Throwable ignored) {
+                    // Safe cleanup to guarantee all tiles release events
                 }
             }
         }

@@ -436,4 +436,18 @@ public class ColorBiomeMapTest {
         BufferedImage adjacentConverted = map.convertToIndexedColors(image, 140.0, true);
         assertEquals(0xC80000, (adjacentConverted.getRGB(1, 0) & 0x00FFFFFF));
     }
+
+    /**
+     * Verifies that invalid or signed hex color strings are rejected with MDCCapturingRuntimeException.
+     */
+    @Test
+    public void testInvalidHexColors() {
+        assertThrows(MDCCapturingRuntimeException.class, () -> ColorBiomeMap.parseHexColor(null));
+        assertThrows(MDCCapturingRuntimeException.class, () -> ColorBiomeMap.parseHexColor("   "));
+        assertThrows(MDCCapturingRuntimeException.class, () -> ColorBiomeMap.parseHexColor("12345")); // 5 digits
+        assertThrows(MDCCapturingRuntimeException.class, () -> ColorBiomeMap.parseHexColor("1234567")); // 7 digits
+        assertThrows(MDCCapturingRuntimeException.class, () -> ColorBiomeMap.parseHexColor("-12345")); // signed negative
+        assertThrows(MDCCapturingRuntimeException.class, () -> ColorBiomeMap.parseHexColor("+12345")); // signed positive
+        assertThrows(MDCCapturingRuntimeException.class, () -> ColorBiomeMap.parseHexColor("00ZZ00")); // non-hex
+    }
 }

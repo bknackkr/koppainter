@@ -421,6 +421,23 @@ public class KoppainterDialog extends WorldPainterDialog {
         }
     }
 
+    /**
+     * Releases all graphical and memory resources associated with this dialog.
+     */
+    @Override
+    public void dispose() {
+        if ((persistentProgressDialog != null)) {
+            persistentProgressDialog.dispose();
+            persistentProgressDialog = null;
+        }
+        if ((previewPanel != null)) {
+            previewPanel.setImage(null);
+        }
+        climateImage = null;
+        biomePreviewImage = null;
+        super.dispose();
+    }
+
     private void selectImageFile() {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select Climate Map Image (Lossless)");
@@ -435,7 +452,7 @@ public class KoppainterDialog extends WorldPainterDialog {
         fileChooser.addChoosableFileFilter(new LosslessImageFilter("TIFF Images (*.tif, *.tiff)", "tif", "tiff"));
         fileChooser.addChoosableFileFilter(new LosslessImageFilter("Truevision TGA Images (*.tga)", "tga"));
 
-        if ((selectedFile != null) && selectedFile.getParentFile().exists()) {
+        if ((selectedFile != null) && (selectedFile.getParentFile() != null) && selectedFile.getParentFile().exists()) {
             fileChooser.setCurrentDirectory(selectedFile.getParentFile());
         }
 
@@ -487,17 +504,24 @@ public class KoppainterDialog extends WorldPainterDialog {
 
         biomePreviewImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         Set<Integer> uniqueColors = new HashSet<>();
+        boolean uniqueColorsCapped = false;
         Set<BiomeEntry> biomesFound = new HashSet<>();
         int exactPixels = 0;
         int snappedPixels = 0;
         int unmappedPixels = 0;
 
         Map<Integer, BiomeEntry> resolutionCache = new HashMap<>();
+        Map<BiomeEntry, Integer> biomeColorCache = new HashMap<>();
 
         for (int y = 0; (y < height); y++) {
             for (int x = 0; (x < width); x++) {
                 int rgb = (climateImage.getRGB(x, y) & 0x00FFFFFF);
-                uniqueColors.add(rgb);
+                if ((!uniqueColorsCapped)) {
+                    uniqueColors.add(rgb);
+                    if ((uniqueColors.size() >= 5000)) {
+                        uniqueColorsCapped = true;
+                    }
+                }
 
                 BiomeEntry biome;
                 if ((colorBiomeMap.hasColor(rgb))) {
@@ -530,7 +554,8 @@ public class KoppainterDialog extends WorldPainterDialog {
                 }
 
                 biomesFound.add(biome);
-                biomePreviewImage.setRGB(x, y, getBiomeColor(biome));
+                int biomeColor = biomeColorCache.computeIfAbsent(biome, KoppainterDialog::getBiomeColor);
+                biomePreviewImage.setRGB(x, y, biomeColor);
             }
         }
 
@@ -538,7 +563,7 @@ public class KoppainterDialog extends WorldPainterDialog {
         previewPanel.setImage((showOriginal ? climateImage : biomePreviewImage));
 
         String statsText = "Size: " + width + " × " + height
-                + " | Unique colors: " + uniqueColors.size()
+                + " | Unique colors: " + (uniqueColorsCapped ? "5000+" : uniqueColors.size())
                 + " | Biomes: " + biomesFound.size();
         if ((snappedPixels > 0)) {
             statsText += " | Coastline mixed: " + snappedPixels
@@ -827,7 +852,7 @@ public class KoppainterDialog extends WorldPainterDialog {
                 baseName = baseName.substring(0, dot);
             }
             suggestedName = (baseName + "-biomes.png");
-            if (selectedFile.getParentFile().exists()) {
+            if ((selectedFile.getParentFile() != null) && selectedFile.getParentFile().exists()) {
                 fileChooser.setCurrentDirectory(selectedFile.getParentFile());
             }
         }
@@ -973,6 +998,11 @@ public class KoppainterDialog extends WorldPainterDialog {
                 buttonCancel.setText("Cancel");
             }
 
+            if ((!isVisible())) {
+                setVisible(true);
+                toFront();
+            }
+
             if ((!GraphicsEnvironment.isHeadless())) {
                 JOptionPane.showMessageDialog(this,
                         "Failed to apply biomes:\n" + error.getMessage(),
@@ -1007,6 +1037,14 @@ public class KoppainterDialog extends WorldPainterDialog {
             persistentProgressDialog = new JDialog(owner, "Applying Biomes - Köppainter",
                     java.awt.Dialog.ModalityType.MODELESS);
             persistentProgressDialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+            persistentProgressDialog.addWindowListener(new WindowAdapter() {
+                @Override
+                public void windowClosing(WindowEvent e) {
+                    if ((applyThread != null) && (applyThread.isAlive())) {
+                        applyThread.interrupt();
+                    }
+                }
+            });
 
             JPanel panel = new JPanel(new BorderLayout(8, 8));
             panel.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));

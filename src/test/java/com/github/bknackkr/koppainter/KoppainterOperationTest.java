@@ -101,4 +101,69 @@ class KoppainterOperationTest {
         assertEquals((100), (progressUpdates.get((progressUpdates.size() - 1))));
         assertTrue((messageUpdates.get((messageUpdates.size() - 1)).contains("row 10 of 10")));
     }
+
+    @Test
+    void testApplyBiomesCancellation() {
+        TileFactory tileFactory = TileFactoryFactory.createFlatTileFactory(
+                0L,
+                Terrain.GRASS,
+                0,
+                256,
+                62,
+                62,
+                false,
+                false
+        );
+        World2 world = new World2(DefaultPlugin.JAVA_ANVIL, 0L, tileFactory);
+        Dimension dimension = world.getDimension(Dimension.Anchor.NORMAL_DETAIL);
+        dimension.addTile(new Tile(0, 0, 0, 256));
+
+        BufferedImage climate = new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB);
+        ColorBiomeMap map = new ColorBiomeMap(Map.of());
+
+        // Pre-interrupt the current thread to simulate a cancellation request
+        Thread.currentThread().interrupt();
+        try {
+            org.pepsoft.util.mdc.MDCCapturingRuntimeException thrown =
+                    org.junit.jupiter.api.Assertions.assertThrows(
+                            org.pepsoft.util.mdc.MDCCapturingRuntimeException.class,
+                            () -> KoppainterOperation.applyBiomes(dimension, climate, map, 0, 0.0, false)
+                    );
+            assertTrue((thrown.getMessage().contains("cancelled")));
+        } finally {
+            // Clear interrupted status to avoid affecting subsequent tests
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void testApplyBiomesNullValidation() {
+        TileFactory tileFactory = TileFactoryFactory.createFlatTileFactory(
+                0L,
+                Terrain.GRASS,
+                0,
+                256,
+                62,
+                62,
+                false,
+                false
+        );
+        World2 world = new World2(DefaultPlugin.JAVA_ANVIL, 0L, tileFactory);
+        Dimension dimension = world.getDimension(Dimension.Anchor.NORMAL_DETAIL);
+        BufferedImage climate = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+        ColorBiomeMap map = new ColorBiomeMap();
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.pepsoft.util.mdc.MDCCapturingRuntimeException.class,
+                () -> KoppainterOperation.applyBiomes(null, climate, map, 0, 0.0, false)
+        );
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.pepsoft.util.mdc.MDCCapturingRuntimeException.class,
+                () -> KoppainterOperation.applyBiomes(dimension, null, map, 0, 0.0, false)
+        );
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.pepsoft.util.mdc.MDCCapturingRuntimeException.class,
+                () -> KoppainterOperation.applyBiomes(dimension, climate, null, 0, 0.0, false)
+        );
+    }
 }

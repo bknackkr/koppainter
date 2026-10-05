@@ -64,8 +64,14 @@ public final class TgaDecoder {
             int bitsPerPixel = in.read();
             int imageDescriptor = in.read();
 
-            if (((width <= 0) || (height <= 0))) {
-                throw new MDCCapturingRuntimeException("Invalid TGA dimensions: " + width + "x" + height);
+            if (((width <= 0) || (height <= 0) || (width > MAX_DIMENSION) || (height > MAX_DIMENSION))) {
+                throw new MDCCapturingRuntimeException("Invalid or unsupported TGA dimensions (max "
+                        + MAX_DIMENSION + "x" + MAX_DIMENSION + "): " + width + "x" + height);
+            }
+            long totalPixelsLong = (((long) width) * height);
+            if (((totalPixelsLong > MAX_TOTAL_PIXELS) || (totalPixelsLong <= 0L))) {
+                throw new MDCCapturingRuntimeException("TGA image total pixels exceeds safety limit ("
+                        + MAX_TOTAL_PIXELS + "): " + totalPixelsLong);
             }
             if (((bitsPerPixel != 24) && (bitsPerPixel != 32) && (bitsPerPixel != 8))) {
                 throw new MDCCapturingRuntimeException("Unsupported TGA bit depth: " + bitsPerPixel
@@ -83,9 +89,13 @@ public final class TgaDecoder {
 
             boolean topToBottom = (((imageDescriptor & 0x20) != 0));
             int bytesPerPixel = (bitsPerPixel / 8);
+            long rawBytesCount = (totalPixelsLong * bytesPerPixel);
+            if ((rawBytesCount > ((long) (Integer.MAX_VALUE - 8)))) {
+                throw new MDCCapturingRuntimeException("TGA uncompressed byte size exceeds maximum allowable memory buffer");
+            }
             int imageTypeConstant = ((bytesPerPixel == 4) ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
             BufferedImage image = new BufferedImage(width, height, imageTypeConstant);
-            int totalPixels = (width * height);
+            int totalPixels = ((int) totalPixelsLong);
             int[] pixelBuffer = new int[totalPixels];
 
             if (((imageType == TYPE_TRUECOLOR) || (imageType == TYPE_GRAYSCALE))) {
@@ -191,6 +201,16 @@ public final class TgaDecoder {
             offset += read;
         }
     }
+
+    /**
+     * Maximum allowable width or height dimension for safety against decompression bombs.
+     */
+    public static final int MAX_DIMENSION = 32768;
+
+    /**
+     * Maximum allowable total pixel count for safety against memory exhaustion.
+     */
+    public static final long MAX_TOTAL_PIXELS = 67108864L;
 
     private static final int TYPE_TRUECOLOR = 2;
     private static final int TYPE_GRAYSCALE = 3;

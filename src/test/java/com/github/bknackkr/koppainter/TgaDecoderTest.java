@@ -137,6 +137,30 @@ public class TgaDecoderTest {
         assertThrows(MDCCapturingRuntimeException.class, () -> TgaDecoder.read(new ByteArrayInputStream(new byte[5])));
     }
 
+    /**
+     * Verifies that oversized dimensions and integer overflows are rejected safely without OOM or exceptions.
+     */
+    @Test
+    public void testOversizedDimensions() {
+        // Dimension exceeding MAX_DIMENSION (32768)
+        ByteArrayOutputStream outDimension = new ByteArrayOutputStream();
+        writeTgaHeader(outDimension, 32769, 10, 24, 2, true);
+        assertThrows(MDCCapturingRuntimeException.class, () ->
+                TgaDecoder.read(new ByteArrayInputStream(outDimension.toByteArray())));
+
+        // Dimensions that would overflow 32-bit integer arithmetic if unchecked (65535 x 65535)
+        ByteArrayOutputStream outOverflow = new ByteArrayOutputStream();
+        writeTgaHeader(outOverflow, 65535, 65535, 24, 2, true);
+        assertThrows(MDCCapturingRuntimeException.class, () ->
+                TgaDecoder.read(new ByteArrayInputStream(outOverflow.toByteArray())));
+
+        // Total pixel count exceeding safety threshold (10,000 x 10,000 = 100,000,000 pixels)
+        ByteArrayOutputStream outPixels = new ByteArrayOutputStream();
+        writeTgaHeader(outPixels, 10000, 10000, 24, 2, true);
+        assertThrows(MDCCapturingRuntimeException.class, () ->
+                TgaDecoder.read(new ByteArrayInputStream(outPixels.toByteArray())));
+    }
+
     private static byte[] createTgaByteArray(int width, int height, int bpp, boolean topToBottom,
                                              boolean rle, int[] pixels) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();

@@ -108,6 +108,7 @@ public class BiomeResolverTest {
     public void testInvalidInputs() {
         assertThrows(MDCCapturingRuntimeException.class, () -> BiomeResolver.resolve(null));
         assertThrows(MDCCapturingRuntimeException.class, () -> BiomeResolver.resolve("   "));
+        assertThrows(MDCCapturingRuntimeException.class, () -> BiomeResolver.resolve("99999999999999999999"));
         assertThrows(MDCCapturingRuntimeException.class, () -> BiomeResolver.resolveById(-1));
         assertThrows(MDCCapturingRuntimeException.class, () -> BiomeResolver.resolveById(300));
     }

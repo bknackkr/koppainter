@@ -291,33 +291,62 @@ public final class ColorBiomeMap {
             return (targetRgb);
         }
 
-        Set<Integer> candidateColors = new HashSet<>(4);
+        int[] candidateColors = new int[4];
+        int candidateCount = 0;
+
         if ((y > 0)) {
             int upRgb = (image.getRGB(x, (y - 1)) & RGB_MASK);
             if ((mappings.containsKey(upRgb))) {
-                candidateColors.add(upRgb);
+                candidateColors[candidateCount++] = upRgb;
             }
         }
         if (((y + 1) < height)) {
             int downRgb = (image.getRGB(x, (y + 1)) & RGB_MASK);
             if ((mappings.containsKey(downRgb))) {
-                candidateColors.add(downRgb);
+                boolean exists = false;
+                for (int i = 0; (i < candidateCount); i++) {
+                    if ((candidateColors[i] == downRgb)) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if ((!exists)) {
+                    candidateColors[candidateCount++] = downRgb;
+                }
             }
         }
         if ((x > 0)) {
             int leftRgb = (image.getRGB((x - 1), y) & RGB_MASK);
             if ((mappings.containsKey(leftRgb))) {
-                candidateColors.add(leftRgb);
+                boolean exists = false;
+                for (int i = 0; (i < candidateCount); i++) {
+                    if ((candidateColors[i] == leftRgb)) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if ((!exists)) {
+                    candidateColors[candidateCount++] = leftRgb;
+                }
             }
         }
         if (((x + 1) < width)) {
             int rightRgb = (image.getRGB((x + 1), y) & RGB_MASK);
             if ((mappings.containsKey(rightRgb))) {
-                candidateColors.add(rightRgb);
+                boolean exists = false;
+                for (int i = 0; (i < candidateCount); i++) {
+                    if ((candidateColors[i] == rightRgb)) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if ((!exists)) {
+                    candidateColors[candidateCount++] = rightRgb;
+                }
             }
         }
 
-        if ((candidateColors.isEmpty())) {
+        if ((candidateCount == 0)) {
             return (null);
         }
 
@@ -329,7 +358,8 @@ public final class ColorBiomeMap {
         long smallestDistanceSquared = Long.MAX_VALUE;
         long secondSmallestDistanceSquared = Long.MAX_VALUE;
 
-        for (Integer candidateColor : candidateColors) {
+        for (int i = 0; (i < candidateCount); i++) {
+            int candidateColor = candidateColors[i];
             int redDiff = (((candidateColor >> 16) & 0xFF) - targetRed);
             int greenDiff = (((candidateColor >> 8) & 0xFF) - targetGreen);
             int blueDiff = ((candidateColor & 0xFF) - targetBlue);
@@ -353,7 +383,7 @@ public final class ColorBiomeMap {
         double distance = Math.sqrt((double) smallestDistanceSquared);
 
         if (((distance <= maxTolerance)
-                && ((candidateColors.size() == 1) || (smallestDistanceSquared < secondSmallestDistanceSquared)))) {
+                && ((candidateCount == 1) || (smallestDistanceSquared < secondSmallestDistanceSquared)))) {
             return (closestColor);
         }
 
@@ -1105,6 +1135,10 @@ public final class ColorBiomeMap {
         if (((cleaned.length() != 6) && (cleaned.length() != 8))) {
             throw new MDCCapturingRuntimeException("Invalid hex color format: \"" + hexString
                     + "\". Expected 6-digit RRGGBB or 8-digit AARRGGBB hex string.");
+        }
+        if ((!isHexDigits(cleaned))) {
+            throw new MDCCapturingRuntimeException("Invalid hex color format: \"" + hexString
+                    + "\". Non-hexadecimal characters found.");
         }
 
         try {
