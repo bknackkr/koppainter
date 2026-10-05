@@ -46,8 +46,6 @@ if [[ -z "${JAVA_HOME:-}" || ! -x "${JAVA_HOME}/bin/java" ]]; then
         "/usr/lib/jvm/default-java"
         "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
         "/Library/Java/JavaVirtualMachines/zulu-21.jdk/Contents/Home"
-        "/mnt/c/Users/bknackkr/programs/graalvm-jdk-21.0.11+9.1"
-        "/c/Users/bknackkr/programs/graalvm-jdk-21.0.11+9.1"
     )
     for j in "${JAVA_CANDIDATES[@]}"; do
         if [[ -x "$j/bin/java" ]]; then

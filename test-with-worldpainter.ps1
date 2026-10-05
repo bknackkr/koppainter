@@ -13,11 +13,14 @@ $ErrorActionPreference = "Stop"
 if (-not $WorldPainterDir) {
     if ($env:WORLDPAINTER_HOME -and (Test-Path $env:WORLDPAINTER_HOME)) {
         $WorldPainterDir = $env:WORLDPAINTER_HOME
-    } elseif ($env:WP_HOME -and (Test-Path $env:WP_HOME)) {
+    }
+    elseif ($env:WP_HOME -and (Test-Path $env:WP_HOME)) {
         $WorldPainterDir = $env:WP_HOME
-    } elseif ($env:WORLDPAINTER_DIR -and (Test-Path $env:WORLDPAINTER_DIR)) {
+    }
+    elseif ($env:WORLDPAINTER_DIR -and (Test-Path $env:WORLDPAINTER_DIR)) {
         $WorldPainterDir = $env:WORLDPAINTER_DIR
-    } else {
+    }
+    else {
         $candidates = @(
             "C:\Program Files\WorldPainter",
             "C:\Program Files (x86)\WorldPainter",
@@ -68,7 +71,8 @@ if (-not $JideVersion) {
             }
         }
         $zip.Dispose()
-    } catch {
+    }
+    catch {
         # Fallback if zip reading fails
     }
 }
@@ -88,7 +92,6 @@ if (-not (Test-Path $mvnw)) {
 # 4. Configure JAVA_HOME if not already set
 if (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
     $javaCandidates = @(
-        "C:\Users\bknackkr\programs\graalvm-jdk-21.0.11+9.1",
         "C:\Program Files\Java\jdk-21",
         "C:\Program Files\Eclipse Adoptium\jdk-21*",
         "C:\Program Files\Microsoft\jdk-21*",
@@ -124,7 +127,8 @@ if ($needsInstall) {
         exit $LASTEXITCODE
     }
     Write-Host "JIDE $JideVersion installed successfully." -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "JIDE $JideVersion is already installed in local Maven repository. Skipping installation." -ForegroundColor DarkGray
 }
 
