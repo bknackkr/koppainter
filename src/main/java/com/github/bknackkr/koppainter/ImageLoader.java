@@ -70,6 +70,45 @@ public final class ImageLoader {
     }
 
     /**
+     * Saves the specified {@link BufferedImage} to disk as a PNG file.
+     *
+     * @param image The image to save.
+     * @param file The destination file.
+     */
+    public static void saveAsPng(BufferedImage image, File file) {
+        if ((image == null)) {
+            throw new MDCCapturingRuntimeException("Image cannot be null");
+        }
+        if ((file == null)) {
+            throw new MDCCapturingRuntimeException("Destination file cannot be null");
+        }
+        try {
+            if ((file.getParentFile() != null) && (!file.getParentFile().exists())) {
+                file.getParentFile().mkdirs();
+            }
+            boolean success = ImageIO.write(image, "png", file);
+            if ((!success)) {
+                throw new MDCCapturingRuntimeException("No appropriate PNG image writer found");
+            }
+        } catch (IOException exception) {
+            throw new MDCCapturingRuntimeException("Failed to save image as PNG to " + file.getAbsolutePath(), exception);
+        }
+    }
+
+    /**
+     * Saves the specified {@link BufferedImage} to disk as a PNG file.
+     *
+     * @param image The image to save.
+     * @param path The destination path.
+     */
+    public static void saveAsPng(BufferedImage image, Path path) {
+        if ((path == null)) {
+            throw new MDCCapturingRuntimeException("Destination path cannot be null");
+        }
+        saveAsPng(image, path.toFile());
+    }
+
+    /**
      * Checks whether the specified file has a supported lossless/uncompressed image extension.
      *
      * @param file The file to check.

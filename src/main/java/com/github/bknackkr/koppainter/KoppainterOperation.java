@@ -71,6 +71,7 @@ public class KoppainterOperation extends AbstractOperation {
         BiomeEntry defaultBiome = dialog.getDefaultBiome();
         int defaultBiomeId = ((defaultBiome != null) ? defaultBiome.getId() : 0);
         double tolerance = dialog.getColorTolerance();
+        boolean adjacentOnly = dialog.isAdjacentOnly();
 
         int width = climate.getWidth();
         int height = climate.getHeight();
@@ -85,13 +86,24 @@ public class KoppainterOperation extends AbstractOperation {
                 int worldX = (originX + x);
                 int rgb = (climate.getRGB(x, y) & 0x00FFFFFF);
 
-                int biomeId = biomeIdCache.computeIfAbsent(rgb, color -> {
-                    BiomeEntry biome = map.getBiome(color);
-                    if ((biome == null) && (tolerance > 0.0)) {
-                        biome = map.findNearestBiome(color, tolerance);
+                int biomeId;
+                BiomeEntry biome = map.getBiome(rgb);
+                if ((biome != null)) {
+                    biomeId = (((biome.getId() >= 0)) ? biome.getId() : defaultBiomeId);
+                } else if (adjacentOnly) {
+                    if ((tolerance > 0.0)) {
+                        biome = map.findNearestAdjacentBiome(climate, x, y, tolerance);
                     }
-                    return (((biome != null) && (biome.getId() >= 0)) ? biome.getId() : defaultBiomeId);
-                });
+                    biomeId = (((biome != null) && (biome.getId() >= 0)) ? biome.getId() : defaultBiomeId);
+                } else {
+                    biomeId = biomeIdCache.computeIfAbsent(rgb, color -> {
+                        BiomeEntry b = null;
+                        if ((tolerance > 0.0)) {
+                            b = map.findNearestBiome(color, tolerance);
+                        }
+                        return (((b != null) && (b.getId() >= 0)) ? b.getId() : defaultBiomeId);
+                    });
+                }
 
                 Tile tile = dimension.getTile((worldX >> 7), (worldY >> 7));
                 if ((tile != null)) {

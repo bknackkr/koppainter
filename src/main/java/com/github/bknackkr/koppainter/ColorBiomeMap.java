@@ -18,8 +18,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import org.pepsoft.util.mdc.MDCCapturingRuntimeException;
 
 /**
@@ -177,18 +179,17 @@ public final class ColorBiomeMap {
     }
 
     /**
-     * Finds the 24-bit RGB indexed color closest to the specified target color within the given margin of error,
-     * dynamically bounded so that similar indexed colors are never confused.
+     * Finds the 24-bit RGB indexed color closest to the specified target color within the given margin of error.
      *
      * <p>If an exact match exists, it is returned immediately (distance 0). Otherwise, the nearest indexed color
-     * is returned only if its Euclidean RGB distance does not exceed {@code maxTolerance}, and is strictly less
-     * than half the distance to that indexed color's closest neighbor in the palette. If the target color is
-     * outside this margin of error or is ambiguous between two colors, {@code null} is returned.</p>
+     * is returned if its Euclidean RGB distance does not exceed {@code maxTolerance}, and is strictly closer
+     * than any competing indexed color. If the target color is outside this margin of error or is tied between
+     * two colors, {@code null} is returned.</p>
      *
      * @param rgb The target 24-bit RGB color.
      * @param maxTolerance The maximum allowable Euclidean distance margin of error.
      * @return The 24-bit RGB integer of the matching indexed color, or {@code null} if no indexed color matches
-     *         within the safe margin of error.
+     *         within the margin of error.
      */
     public Integer findNearestColor(int rgb, double maxTolerance) {
         if ((mappings.isEmpty())) {
@@ -232,10 +233,9 @@ public final class ColorBiomeMap {
         }
 
         double distance = Math.sqrt((double) smallestDistanceSquared);
-        double effectiveTolerance = getEffectiveTolerance(closestColor, maxTolerance);
 
-        // Safe conversion condition: within effective tolerance and strictly closer than the second closest color
-        if (((distance <= effectiveTolerance)
+        // Safe conversion condition: within user tolerance and strictly closer than the second closest color
+        if (((distance <= maxTolerance)
                 && (smallestDistanceSquared < secondSmallestDistanceSquared))) {
             return (closestColor);
         }
@@ -258,6 +258,127 @@ public final class ColorBiomeMap {
     }
 
     /**
+     * Finds the nearest 24-bit RGB indexed color among the 4 orthogonal adjacent pixels (up, down, left, right)
+     * of the specified pixel coordinates within the given margin of error.
+     *
+     * <p>Only adjacent pixels that have defined indexed colors in this map are evaluated as candidate matches.
+     * If multiple adjacent indexed colors are present, the one closest in Euclidean RGB distance to the target
+     * pixel's color is selected, provided it is within {@code maxTolerance} and not ambiguous/tied. If no adjacent
+     * pixel has an indexed color or none is within tolerance, {@code null} is returned.</p>
+     *
+     * @param image The image containing the pixel and its neighbors.
+     * @param x The x coordinate of the target pixel.
+     * @param y The y coordinate of the target pixel.
+     * @param maxTolerance The maximum allowable Euclidean distance margin of error.
+     * @return The 24-bit RGB integer of the matching adjacent indexed color, or {@code null} if none matches.
+     */
+    public Integer findNearestAdjacentColor(BufferedImage image, int x, int y, double maxTolerance) {
+        if ((image == null)) {
+            throw new MDCCapturingRuntimeException("Image cannot be null");
+        }
+        if ((mappings.isEmpty()) || (maxTolerance <= 0.0)) {
+            return (null);
+        }
+        int width = image.getWidth();
+        int height = image.getHeight();
+        if (((x < 0) || (x >= width) || (y < 0) || (y >= height))) {
+            throw new MDCCapturingRuntimeException(String.format("Coordinates (%d, %d) out of bounds (%dx%d)",
+                    x, y, width, height));
+        }
+
+        int targetRgb = (image.getRGB(x, y) & RGB_MASK);
+        if ((mappings.containsKey(targetRgb))) {
+            return (targetRgb);
+        }
+
+        Set<Integer> candidateColors = new HashSet<>(4);
+        if ((y > 0)) {
+            int upRgb = (image.getRGB(x, (y - 1)) & RGB_MASK);
+            if ((mappings.containsKey(upRgb))) {
+                candidateColors.add(upRgb);
+            }
+        }
+        if (((y + 1) < height)) {
+            int downRgb = (image.getRGB(x, (y + 1)) & RGB_MASK);
+            if ((mappings.containsKey(downRgb))) {
+                candidateColors.add(downRgb);
+            }
+        }
+        if ((x > 0)) {
+            int leftRgb = (image.getRGB((x - 1), y) & RGB_MASK);
+            if ((mappings.containsKey(leftRgb))) {
+                candidateColors.add(leftRgb);
+            }
+        }
+        if (((x + 1) < width)) {
+            int rightRgb = (image.getRGB((x + 1), y) & RGB_MASK);
+            if ((mappings.containsKey(rightRgb))) {
+                candidateColors.add(rightRgb);
+            }
+        }
+
+        if ((candidateColors.isEmpty())) {
+            return (null);
+        }
+
+        int targetRed = ((targetRgb >> 16) & 0xFF);
+        int targetGreen = ((targetRgb >> 8) & 0xFF);
+        int targetBlue = (targetRgb & 0xFF);
+
+        Integer closestColor = null;
+        long smallestDistanceSquared = Long.MAX_VALUE;
+        long secondSmallestDistanceSquared = Long.MAX_VALUE;
+
+        for (Integer candidateColor : candidateColors) {
+            int redDiff = (((candidateColor >> 16) & 0xFF) - targetRed);
+            int greenDiff = (((candidateColor >> 8) & 0xFF) - targetGreen);
+            int blueDiff = ((candidateColor & 0xFF) - targetBlue);
+            long distanceSquared = (((long) redDiff * redDiff)
+                    + ((long) greenDiff * greenDiff)
+                    + ((long) blueDiff * blueDiff));
+
+            if ((distanceSquared < smallestDistanceSquared)) {
+                secondSmallestDistanceSquared = smallestDistanceSquared;
+                smallestDistanceSquared = distanceSquared;
+                closestColor = candidateColor;
+            } else if ((distanceSquared < secondSmallestDistanceSquared)) {
+                secondSmallestDistanceSquared = distanceSquared;
+            }
+        }
+
+        if ((closestColor == null)) {
+            return (null);
+        }
+
+        double distance = Math.sqrt((double) smallestDistanceSquared);
+
+        if (((distance <= maxTolerance)
+                && ((candidateColors.size() == 1) || (smallestDistanceSquared < secondSmallestDistanceSquared)))) {
+            return (closestColor);
+        }
+
+        return (null);
+    }
+
+    /**
+     * Finds the nearest {@link BiomeEntry} among the 4 orthogonal adjacent pixels (up, down, left, right)
+     * of the specified pixel coordinates within the given margin of error.
+     *
+     * @param image The image containing the pixel and its neighbors.
+     * @param x The x coordinate of the target pixel.
+     * @param y The y coordinate of the target pixel.
+     * @param maxTolerance The maximum allowable Euclidean distance margin of error.
+     * @return The matching adjacent biome entry, or {@code null} if none matches safely.
+     */
+    public BiomeEntry findNearestAdjacentBiome(BufferedImage image, int x, int y, double maxTolerance) {
+        Integer matchedColor = findNearestAdjacentColor(image, x, y, maxTolerance);
+        if ((matchedColor != null)) {
+            return (mappings.get(matchedColor));
+        }
+        return (null);
+    }
+
+    /**
      * Returns the Euclidean RGB distance between the specified indexed color and its closest indexed neighbor.
      *
      * @param rgb The 24-bit RGB color.
@@ -276,25 +397,57 @@ public final class ColorBiomeMap {
 
     /**
      * Calculates the effective tolerance (margin of error) for matching slightly-off colors against the specified
-     * indexed color, dynamically clamped so that similar indexed colors can never overlap or be misidentified.
+     * indexed color.
      *
      * @param rgb The 24-bit RGB indexed color.
      * @param maxTolerance The global maximum tolerance.
-     * @return The effective tolerance, clamped to strictly less than half the distance to the nearest neighbor.
+     * @return The effective tolerance, clamped to non-negative values.
      */
     public double getEffectiveTolerance(int rgb, double maxTolerance) {
         if ((maxTolerance <= 0.0)) {
             return (0.0);
         }
-        int targetRgb = (rgb & RGB_MASK);
-        ensureNeighborDistances();
-        Double neighborDist = nearestNeighborDistances.get(targetRgb);
-        if ((neighborDist == null) || (Double.isInfinite(neighborDist))) {
-            return (maxTolerance);
+        return (maxTolerance);
+    }
+
+    /**
+     * Converts slightly-off colors in the given image to the nearest indexed color within the specified tolerance.
+     *
+     * <p>If {@code adjacentOnly} is {@code true}, only indexed colors physically adjacent (4-connected) to each
+     * non-indexed pixel are considered as candidates, preventing distant palette colors from matching.</p>
+     *
+     * @param image The input image to process.
+     * @param maxTolerance The margin of error tolerance.
+     * @param adjacentOnly If {@code true}, restricts matching to adjacent indexed colors.
+     * @return A new {@link BufferedImage} containing the converted colors.
+     */
+    public BufferedImage convertToIndexedColors(BufferedImage image, double maxTolerance, boolean adjacentOnly) {
+        if ((image == null)) {
+            throw new MDCCapturingRuntimeException("Image cannot be null");
         }
-        // Clamped to strictly less than half the distance to the nearest neighbor
-        double maxSafeRadius = Math.max(0.0, ((neighborDist / 2.0) - 0.0001));
-        return (Math.min(maxTolerance, maxSafeRadius));
+        int width = image.getWidth();
+        int height = image.getHeight();
+        BufferedImage result = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Map<Integer, Integer> colorCache = new LinkedHashMap<>();
+
+        for (int y = 0; (y < height); y++) {
+            for (int x = 0; (x < width); x++) {
+                int originalRgb = (image.getRGB(x, y) & RGB_MASK);
+                if ((mappings.containsKey(originalRgb))) {
+                    result.setRGB(x, y, originalRgb);
+                } else if (adjacentOnly) {
+                    Integer matched = findNearestAdjacentColor(image, x, y, maxTolerance);
+                    result.setRGB(x, y, (((matched != null) ? matched : originalRgb)));
+                } else {
+                    int convertedRgb = colorCache.computeIfAbsent(originalRgb, c -> {
+                        Integer matched = findNearestColor(c, maxTolerance);
+                        return (((matched != null) ? matched : c));
+                    });
+                    result.setRGB(x, y, convertedRgb);
+                }
+            }
+        }
+        return (result);
     }
 
     /**
@@ -307,25 +460,133 @@ public final class ColorBiomeMap {
      * @return A new {@link BufferedImage} containing the converted colors.
      */
     public BufferedImage convertToIndexedColors(BufferedImage image, double maxTolerance) {
-        if ((image == null)) {
-            throw new MDCCapturingRuntimeException("Image cannot be null");
+        return (convertToIndexedColors(image, maxTolerance, false));
+    }
+
+    /**
+     * Generates a Minecraft biome map image from the specified climate map image using representative biome colors.
+     *
+     * @param climateImage The source climate map image.
+     * @param defaultBiome The fallback biome for unmapped colors.
+     * @param maxTolerance The color tolerance margin of error.
+     * @param adjacentOnly If {@code true}, restricts matching to adjacent indexed colors.
+     * @return A new {@link BufferedImage} representing the biome map.
+     */
+    public BufferedImage generateBiomeMapImage(BufferedImage climateImage, BiomeEntry defaultBiome,
+                                                double maxTolerance, boolean adjacentOnly) {
+        if ((climateImage == null)) {
+            throw new MDCCapturingRuntimeException("Climate image cannot be null");
         }
-        int width = image.getWidth();
-        int height = image.getHeight();
+        int width = climateImage.getWidth();
+        int height = climateImage.getHeight();
         BufferedImage result = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         Map<Integer, Integer> colorCache = new LinkedHashMap<>();
 
         for (int y = 0; (y < height); y++) {
             for (int x = 0; (x < width); x++) {
-                int originalRgb = (image.getRGB(x, y) & RGB_MASK);
-                int convertedRgb = colorCache.computeIfAbsent(originalRgb, c -> {
-                    Integer matched = findNearestColor(c, maxTolerance);
-                    return (((matched != null) ? matched : c));
-                });
-                result.setRGB(x, y, convertedRgb);
+                int rgb = (climateImage.getRGB(x, y) & RGB_MASK);
+                int biomeColor;
+                if ((mappings.containsKey(rgb))) {
+                    biomeColor = KoppainterDialog.getBiomeColor(getBiome(rgb));
+                } else if (adjacentOnly) {
+                    BiomeEntry biome = null;
+                    if ((maxTolerance > 0.0)) {
+                        biome = findNearestAdjacentBiome(climateImage, x, y, maxTolerance);
+                    }
+                    if ((biome == null)) {
+                        biome = defaultBiome;
+                    }
+                    biomeColor = KoppainterDialog.getBiomeColor(biome);
+                } else {
+                    biomeColor = colorCache.computeIfAbsent(rgb, c -> {
+                        BiomeEntry biome = getBiome(c);
+                        if ((biome == null) && (maxTolerance > 0.0)) {
+                            biome = findNearestBiome(c, maxTolerance);
+                        }
+                        if ((biome == null)) {
+                            biome = defaultBiome;
+                        }
+                        return (KoppainterDialog.getBiomeColor(biome));
+                    });
+                }
+                result.setRGB(x, y, biomeColor);
             }
         }
         return (result);
+    }
+
+    /**
+     * Generates a Minecraft biome map image from the specified climate map image using representative biome colors.
+     *
+     * @param climateImage The source climate map image.
+     * @param defaultBiome The fallback biome for unmapped colors.
+     * @param maxTolerance The color tolerance margin of error.
+     * @return A new {@link BufferedImage} representing the biome map.
+     */
+    public BufferedImage generateBiomeMapImage(BufferedImage climateImage, BiomeEntry defaultBiome,
+                                                double maxTolerance) {
+        return (generateBiomeMapImage(climateImage, defaultBiome, maxTolerance, false));
+    }
+
+    /**
+     * Exports a generated biome map from the specified climate map image directly to disk as a PNG file.
+     *
+     * @param climateImage The source climate map image.
+     * @param destination The destination PNG file path.
+     * @param defaultBiome The fallback biome for unmapped colors.
+     * @param maxTolerance The color tolerance margin of error.
+     * @param adjacentOnly If {@code true}, restricts matching to adjacent indexed colors.
+     */
+    public void exportBiomeMapAsPng(BufferedImage climateImage, Path destination, BiomeEntry defaultBiome,
+                                    double maxTolerance, boolean adjacentOnly) {
+        if ((destination == null)) {
+            throw new MDCCapturingRuntimeException("Destination path cannot be null");
+        }
+        BufferedImage biomeMap = generateBiomeMapImage(climateImage, defaultBiome, maxTolerance, adjacentOnly);
+        ImageLoader.saveAsPng(biomeMap, destination);
+    }
+
+    /**
+     * Exports a generated biome map from the specified climate map image directly to disk as a PNG file.
+     *
+     * @param climateImage The source climate map image.
+     * @param destination The destination PNG file path.
+     * @param defaultBiome The fallback biome for unmapped colors.
+     * @param maxTolerance The color tolerance margin of error.
+     */
+    public void exportBiomeMapAsPng(BufferedImage climateImage, Path destination, BiomeEntry defaultBiome,
+                                    double maxTolerance) {
+        exportBiomeMapAsPng(climateImage, destination, defaultBiome, maxTolerance, false);
+    }
+
+    /**
+     * Exports a generated biome map from the specified climate map image directly to disk as a PNG file.
+     *
+     * @param climateImage The source climate map image.
+     * @param destinationFile The destination PNG file.
+     * @param defaultBiome The fallback biome for unmapped colors.
+     * @param maxTolerance The color tolerance margin of error.
+     * @param adjacentOnly If {@code true}, restricts matching to adjacent indexed colors.
+     */
+    public void exportBiomeMapAsPng(BufferedImage climateImage, File destinationFile, BiomeEntry defaultBiome,
+                                    double maxTolerance, boolean adjacentOnly) {
+        if ((destinationFile == null)) {
+            throw new MDCCapturingRuntimeException("Destination file cannot be null");
+        }
+        exportBiomeMapAsPng(climateImage, destinationFile.toPath(), defaultBiome, maxTolerance, adjacentOnly);
+    }
+
+    /**
+     * Exports a generated biome map from the specified climate map image directly to disk as a PNG file.
+     *
+     * @param climateImage The source climate map image.
+     * @param destinationFile The destination PNG file.
+     * @param defaultBiome The fallback biome for unmapped colors.
+     * @param maxTolerance The color tolerance margin of error.
+     */
+    public void exportBiomeMapAsPng(BufferedImage climateImage, File destinationFile, BiomeEntry defaultBiome,
+                                    double maxTolerance) {
+        exportBiomeMapAsPng(climateImage, destinationFile, defaultBiome, maxTolerance, false);
     }
 
     /**
@@ -862,6 +1123,35 @@ public final class ColorBiomeMap {
      */
     public static String formatHexColor(int rgb) {
         return (String.format("%06X", (rgb & RGB_MASK)));
+    }
+
+    /**
+     * Exports the specified {@link BufferedImage} to disk as a PNG file.
+     *
+     * @param image The image to export.
+     * @param path The destination path.
+     */
+    public static void exportAsPng(BufferedImage image, Path path) {
+        if ((image == null)) {
+            throw new MDCCapturingRuntimeException("Image cannot be null");
+        }
+        if ((path == null)) {
+            throw new MDCCapturingRuntimeException("Destination path cannot be null");
+        }
+        ImageLoader.saveAsPng(image, path);
+    }
+
+    /**
+     * Exports the specified {@link BufferedImage} to disk as a PNG file.
+     *
+     * @param image The image to export.
+     * @param file The destination file.
+     */
+    public static void exportAsPng(BufferedImage image, File file) {
+        if ((file == null)) {
+            throw new MDCCapturingRuntimeException("Destination file cannot be null");
+        }
+        exportAsPng(image, file.toPath());
     }
 
     private static boolean isHexDigits(String text) {

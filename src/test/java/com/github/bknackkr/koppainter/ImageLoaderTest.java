@@ -117,6 +117,31 @@ public class ImageLoaderTest {
     public void testErrorHandling() {
         assertThrows(MDCCapturingRuntimeException.class, () -> ImageLoader.load((File) null));
         assertThrows(MDCCapturingRuntimeException.class, () -> ImageLoader.load(new File("nonexistent_file.png")));
+        assertThrows(MDCCapturingRuntimeException.class, () -> ImageLoader.saveAsPng(null, new File("test.png")));
+        assertThrows(MDCCapturingRuntimeException.class, () -> ImageLoader.saveAsPng(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), (File) null));
+    }
+
+    /**
+     * Verifies saving a BufferedImage as a PNG file and reading it back.
+     *
+     * @param tempDir JUnit temporary directory.
+     * @throws IOException If image file operations fail.
+     */
+    @Test
+    public void testSaveAsPng(@TempDir Path tempDir) throws IOException {
+        BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_RGB);
+        image.setRGB(2, 2, 0x123456);
+        File exportFile = tempDir.resolve("exported.png").toFile();
+
+        ImageLoader.saveAsPng(image, exportFile);
+        assertTrue(exportFile.exists());
+        assertTrue((exportFile.length() > 0));
+
+        BufferedImage reloaded = ImageLoader.load(exportFile);
+        assertNotNull(reloaded);
+        assertEquals(5, reloaded.getWidth());
+        assertEquals(5, reloaded.getHeight());
+        assertEquals(0x123456, (reloaded.getRGB(2, 2) & 0xFFFFFF));
     }
 
     private static byte[] createSimpleTgaBytes(int width, int height, int rgb) {

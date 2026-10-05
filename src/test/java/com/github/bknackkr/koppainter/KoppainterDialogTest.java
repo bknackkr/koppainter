@@ -117,4 +117,65 @@ public class KoppainterDialogTest {
 
         dialog.dispose();
     }
+
+    /**
+     * Verifies exporting the generated biome map preview as a PNG file.
+     *
+     * @param tempDir JUnit temporary directory.
+     * @throws IOException If image file operations fail.
+     */
+    @Test
+    public void testExportBiomeMapAsPng(@TempDir Path tempDir) throws IOException {
+        if ((GraphicsEnvironment.isHeadless())) {
+            return;
+        }
+
+        if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
+            org.pepsoft.worldpainter.Configuration.setInstance(new org.pepsoft.worldpainter.Configuration());
+        }
+
+        BufferedImage sampleImage = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB);
+        sampleImage.setRGB(0, 0, 0xFF0000);
+        File sampleFile = tempDir.resolve("sample_climate.png").toFile();
+        ImageIO.write(sampleImage, "png", sampleFile);
+
+        KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadDefault(), sampleFile);
+        File exportFile = tempDir.resolve("exported_biomes.png").toFile();
+
+        dialog.exportBiomeMapAsPng(exportFile);
+        assertTrue(exportFile.exists());
+        assertTrue((exportFile.length() > 0));
+
+        BufferedImage reloaded = ImageLoader.load(exportFile);
+        assertNotNull(reloaded);
+        assertEquals(8, reloaded.getWidth());
+        assertEquals(8, reloaded.getHeight());
+
+        dialog.dispose();
+    }
+
+    /**
+     * Verifies the adjacent-only mode setting and getter/setter.
+     */
+    @Test
+    public void testAdjacentOnlySetting() {
+        if ((GraphicsEnvironment.isHeadless())) {
+            return;
+        }
+
+        if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
+            org.pepsoft.worldpainter.Configuration.setInstance(new org.pepsoft.worldpainter.Configuration());
+        }
+
+        KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadDefault());
+        assertFalse(dialog.isAdjacentOnly());
+
+        dialog.setAdjacentOnly(true);
+        assertTrue(dialog.isAdjacentOnly());
+
+        dialog.setAdjacentOnly(false);
+        assertFalse(dialog.isAdjacentOnly());
+
+        dialog.dispose();
+    }
 }

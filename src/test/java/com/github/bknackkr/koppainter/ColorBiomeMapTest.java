@@ -222,11 +222,11 @@ public class ColorBiomeMapTest {
     }
 
     /**
-     * Verifies that the dynamic neighbor-distance limit prevents similar indexed colors from
-     * being confused or misidentified, even when a large global tolerance is specified.
+     * Verifies nearest color tolerance matching, ensuring exact colors resolve, colors within tolerance match
+     * their nearest neighbor, colors exceeding tolerance return null, and equidistant tied colors return null.
      */
     @Test
-    public void testDynamicNeighborClampingPreventsMisidentification() {
+    public void testNearestColorTolerance() {
         ColorBiomeMap map = new ColorBiomeMap();
         // Two colors separated by distance 20:
         // Color A: (100, 100, 100) -> 0x646464
@@ -239,29 +239,68 @@ public class ColorBiomeMapTest {
         assertEquals(20.0, neighborDistA, 0.001);
         assertEquals(20.0, neighborDistB, 0.001);
 
-        // Effective tolerance should be clamped to strictly less than 10.0 (half of 20)
-        double effTolerance = map.getEffectiveTolerance(0x646464, 30.0);
-        assertTrue((effTolerance < 10.0));
-        assertTrue((effTolerance >= 9.999));
+        // Effective tolerance applies fully
+        assertEquals(30.0, map.getEffectiveTolerance(0x646464, 30.0), 0.001);
 
         // Exact colors should always resolve to themselves
         assertEquals("minecraft:desert", map.findNearestBiome(0x646464, 30.0).getModernId());
         assertEquals("minecraft:ocean", map.findNearestBiome(0x646478, 30.0).getModernId());
 
-        // A color 4 units away from A: (100, 100, 96) -> distance 4 (< 10)
+        // A color 4 units away from A: (100, 100, 96) -> distance 4 (< 30)
         int nearA = 0x646460;
         assertEquals("minecraft:desert", map.findNearestBiome(nearA, 30.0).getModernId());
 
-        // A color 12 units away from A: (100, 100, 88) -> distance 12 (> 10)
-        // Without clamping, a global tolerance of 30 would accept it, but clamping MUST reject it
-        int tooFarFromA = 0x646458;
-        assertNull(map.findNearestBiome(tooFarFromA, 30.0));
-        assertNull(map.findNearestColor(tooFarFromA, 30.0));
+        // A color 12 units away from A: (100, 100, 88) -> distance 12 (< 30)
+        // With tolerance 30, it is within tolerance and closer to A than B (distance to B is 32)
+        int dist12FromA = 0x646458;
+        assertEquals("minecraft:desert", map.findNearestBiome(dist12FromA, 30.0).getModernId());
+        assertEquals(0x646464, map.findNearestColor(dist12FromA, 30.0));
 
-        // Exact midpoint: (100, 100, 110) -> distance 10 to both A and B, rejected
+        // When tolerance is 10, distance 12 exceeds tolerance and is rejected
+        assertNull(map.findNearestBiome(dist12FromA, 10.0));
+        assertNull(map.findNearestColor(dist12FromA, 10.0));
+
+        // Exact midpoint: (100, 100, 110) -> distance 10 to both A and B; tied ambiguity is rejected
         int midpoint = 0x64646E;
         assertNull(map.findNearestBiome(midpoint, 30.0));
         assertNull(map.findNearestColor(midpoint, 30.0));
+    }
+
+    /**
+     * Verifies that anti-aliased transitions between high-contrast coastlines (e.g. Desert and Ocean)
+     * are correctly resolved by tolerance.
+     */
+    @Test
+    public void testCoastlineAntiAliasingResolution() {
+        ColorBiomeMap map = ColorBiomeMap.loadDefault();
+        int savannaRgb = 0x46A9FA; // Savanna
+        int oceanRgb = 0x5D697B;   // Lukewarm Ocean
+
+        // For pixels blended closely near Savanna (t <= 0.15)
+        for (int i = 0; i <= 15; i++) {
+            double t = (i / 100.0);
+            int r = (int) Math.round(((1.0 - t) * ((savannaRgb >> 16) & 0xFF)) + (t * ((oceanRgb >> 16) & 0xFF)));
+            int g = (int) Math.round(((1.0 - t) * ((savannaRgb >> 8) & 0xFF)) + (t * ((oceanRgb >> 8) & 0xFF)));
+            int b = (int) Math.round(((1.0 - t) * (savannaRgb & 0xFF)) + (t * (oceanRgb & 0xFF)));
+            int blended = (((r << 16) | (g << 8)) | b);
+
+            BiomeEntry biome = map.findNearestBiome(blended, 100.0);
+            assertNotNull(biome, "Expected blended pixel at step " + i + " to resolve with tolerance 100");
+            assertEquals("minecraft:savanna", biome.getModernId());
+        }
+
+        // For pixels blended closely near Ocean (t >= 0.85)
+        for (int i = 85; i <= 100; i++) {
+            double t = (i / 100.0);
+            int r = (int) Math.round(((1.0 - t) * ((savannaRgb >> 16) & 0xFF)) + (t * ((oceanRgb >> 16) & 0xFF)));
+            int g = (int) Math.round(((1.0 - t) * ((savannaRgb >> 8) & 0xFF)) + (t * ((oceanRgb >> 8) & 0xFF)));
+            int b = (int) Math.round(((1.0 - t) * (savannaRgb & 0xFF)) + (t * (oceanRgb & 0xFF)));
+            int blended = (((r << 16) | (g << 8)) | b);
+
+            BiomeEntry biome = map.findNearestBiome(blended, 100.0);
+            assertNotNull(biome, "Expected blended pixel at step " + i + " to resolve with tolerance 100");
+            assertEquals("minecraft:lukewarm_ocean", biome.getModernId());
+        }
     }
 
     /**
@@ -287,5 +326,114 @@ public class ColorBiomeMapTest {
         assertEquals(0xFF0000, (converted.getRGB(0, 0) & 0x00FFFFFF));
         assertEquals(0xFF0000, (converted.getRGB(1, 0) & 0x00FFFFFF));
         assertEquals(0x0000FF, (converted.getRGB(2, 0) & 0x00FFFFFF));
+    }
+
+    /**
+     * Verifies generating a biome map image and exporting it directly as a PNG file.
+     *
+     * @param tempDir JUnit temporary directory.
+     * @throws Exception If an unexpected error occurs.
+     */
+    @Test
+    public void testGenerateBiomeMapImageAndExport(@TempDir Path tempDir) throws Exception {
+        ColorBiomeMap map = new ColorBiomeMap();
+        map.put("FF0000", "desert");
+        BiomeEntry ocean = BiomeResolver.resolve("ocean");
+
+        BufferedImage climate = new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB);
+        // Pixel (0,0) exact desert, (1,0) slightly-off desert (FC0201), (2,0) unmapped (0x00FF00)
+        climate.setRGB(0, 0, 0xFF0000);
+        climate.setRGB(1, 0, 0xFC0201);
+        climate.setRGB(2, 0, 0x00FF00);
+
+        BufferedImage biomeMap = map.generateBiomeMapImage(climate, ocean, 10.0);
+        assertNotNull(biomeMap);
+        int desertColor = KoppainterDialog.getBiomeColor(map.getBiome(0xFF0000));
+        int oceanColor = KoppainterDialog.getBiomeColor(ocean);
+
+        assertEquals(desertColor, biomeMap.getRGB(0, 0));
+        assertEquals(desertColor, biomeMap.getRGB(1, 0));
+        assertEquals(oceanColor, biomeMap.getRGB(2, 0));
+
+        Path exportPath = tempDir.resolve("direct_export.png");
+        map.exportBiomeMapAsPng(climate, exportPath, ocean, 10.0);
+        assertTrue(Files.exists(exportPath));
+        assertTrue((Files.size(exportPath) > 0));
+
+        BufferedImage reloaded = ImageLoader.load(exportPath);
+        assertNotNull(reloaded);
+        assertEquals(4, reloaded.getWidth());
+        assertEquals(desertColor, reloaded.getRGB(0, 0));
+        assertEquals(desertColor, reloaded.getRGB(1, 0));
+        assertEquals(oceanColor, reloaded.getRGB(2, 0));
+    }
+
+    /**
+     * Verifies that findNearestAdjacentBiome restricts candidates to the 4 orthogonal adjacent pixels,
+     * preventing distant gray polar biomes from matching coastlines.
+     */
+    @Test
+    public void testFindNearestAdjacentBiomeAndColor() {
+        ColorBiomeMap map = new ColorBiomeMap();
+        map.put("C80000", "desert"); // (200, 0, 0)
+        map.put("0000C8", "ocean");  // (0, 0, 200)
+        map.put("646464", "snowy_plains"); // (100, 100, 100) - distant gray palette color!
+
+        // 3x1 image: (0,0)=Desert, (1,0)=Mixed reddish pixel (110, 0, 90), (2,0)=Ocean
+        BufferedImage image = new BufferedImage(3, 1, BufferedImage.TYPE_INT_RGB);
+        image.setRGB(0, 0, 0xC80000);
+        image.setRGB(1, 0, ((110 << 16) | 90));
+        image.setRGB(2, 0, 0x0000C8);
+
+        // Distance from (110, 0, 90) to Desert: sqrt((200-110)^2 + 0 + 90^2) = sqrt(8100 + 8100) = ~127.3
+        // Distance from (110, 0, 90) to Ocean: sqrt(110^2 + 0 + (200-90)^2) = sqrt(12100 + 12100) = ~155.6
+        // Distance from (110, 0, 90) to Snowy Plains: sqrt((110-100)^2 + 100^2 + (90-100)^2) = sqrt(100+10000+100) = ~101.0
+
+        // With global matching (adjacentOnly = false), Snowy Plains is closer (101.0 < 127.3)
+        BiomeEntry globalMatch = map.findNearestBiome(image.getRGB(1, 0), 140.0);
+        assertNotNull(globalMatch);
+        assertEquals("minecraft:snowy_plains", globalMatch.getModernId());
+
+        // With adjacent-only matching (adjacentOnly = true), candidates are ONLY { Desert, Ocean }
+        // Snowy Plains is ignored, and Desert is chosen (127.3 < 155.6)!
+        BiomeEntry adjacentMatch = map.findNearestAdjacentBiome(image, 1, 0, 140.0);
+        assertNotNull(adjacentMatch);
+        assertEquals("minecraft:desert", adjacentMatch.getModernId());
+
+        Integer adjacentColor = map.findNearestAdjacentColor(image, 1, 0, 140.0);
+        assertNotNull(adjacentColor);
+        assertEquals(0xC80000, (int) adjacentColor);
+
+        // If tolerance is too small (e.g. 50), adjacent search returns null
+        assertNull(map.findNearestAdjacentBiome(image, 1, 0, 50.0));
+        assertNull(map.findNearestAdjacentColor(image, 1, 0, 50.0));
+
+        // Exact indexed pixel returns its own color immediately
+        assertEquals(0xC80000, (int) map.findNearestAdjacentColor(image, 0, 0, 50.0));
+    }
+
+    /**
+     * Verifies that convertToIndexedColors with adjacentOnly=true resolves mixed coastline pixels
+     * to adjacent colors rather than distant gray biomes.
+     */
+    @Test
+    public void testConvertToIndexedColorsAdjacentOnly() {
+        ColorBiomeMap map = new ColorBiomeMap();
+        map.put("C80000", "desert");
+        map.put("0000C8", "ocean");
+        map.put("646464", "snowy_plains");
+
+        BufferedImage image = new BufferedImage(3, 1, BufferedImage.TYPE_INT_RGB);
+        image.setRGB(0, 0, 0xC80000);
+        image.setRGB(1, 0, ((110 << 16) | 90));
+        image.setRGB(2, 0, 0x0000C8);
+
+        // Global convert: middle pixel turns into gray snowy plains
+        BufferedImage globalConverted = map.convertToIndexedColors(image, 140.0, false);
+        assertEquals(0x646464, (globalConverted.getRGB(1, 0) & 0x00FFFFFF));
+
+        // Adjacent only convert: middle pixel turns into adjacent desert
+        BufferedImage adjacentConverted = map.convertToIndexedColors(image, 140.0, true);
+        assertEquals(0xC80000, (adjacentConverted.getRGB(1, 0) & 0x00FFFFFF));
     }
 }

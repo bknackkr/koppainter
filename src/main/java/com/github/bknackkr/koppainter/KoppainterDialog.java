@@ -17,6 +17,7 @@ import java.awt.Window;
 import java.awt.event.ItemEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -30,6 +31,7 @@ import javax.swing.DefaultListCellRenderer;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
@@ -172,6 +174,53 @@ public class KoppainterDialog extends WorldPainterDialog {
     }
 
     /**
+     * Checks whether nearest-color matching is restricted to the 4 orthogonal adjacent pixels.
+     *
+     * @return {@code true} if adjacent-only mode is enabled, {@code false} otherwise.
+     */
+    public boolean isAdjacentOnly() {
+        return ((checkAdjacentOnly != null) && checkAdjacentOnly.isSelected());
+    }
+
+    /**
+     * Sets whether nearest-color matching is restricted to the 4 orthogonal adjacent pixels.
+     *
+     * @param adjacentOnly {@code true} to enable adjacent-only mode, {@code false} otherwise.
+     */
+    public void setAdjacentOnly(boolean adjacentOnly) {
+        if ((checkAdjacentOnly != null)) {
+            checkAdjacentOnly.setSelected(adjacentOnly);
+        }
+    }
+
+    /**
+     * Exports the generated Minecraft biome preview map to disk as a PNG file.
+     *
+     * @param file The destination PNG file.
+     */
+    public void exportBiomeMapAsPng(File file) {
+        if ((file == null)) {
+            throw new MDCCapturingRuntimeException("Destination file cannot be null");
+        }
+        if ((biomePreviewImage == null)) {
+            throw new MDCCapturingRuntimeException("No generated biome map image available to export");
+        }
+        ImageLoader.saveAsPng(biomePreviewImage, file);
+    }
+
+    /**
+     * Exports the generated Minecraft biome preview map to disk as a PNG file.
+     *
+     * @param path The destination PNG path.
+     */
+    public void exportBiomeMapAsPng(Path path) {
+        if ((path == null)) {
+            throw new MDCCapturingRuntimeException("Destination path cannot be null");
+        }
+        exportBiomeMapAsPng(path.toFile());
+    }
+
+    /**
      * Confirms the dialog if a valid image has been loaded, or displays an alert prompting the user to select one.
      */
     @Override
@@ -262,6 +311,7 @@ public class KoppainterDialog extends WorldPainterDialog {
 
         BiomeEntry defaultBiome = getDefaultBiome();
         double tolerance = getColorTolerance();
+        boolean adjacentOnly = isAdjacentOnly();
         int width = climateImage.getWidth();
         int height = climateImage.getHeight();
 
@@ -283,8 +333,24 @@ public class KoppainterDialog extends WorldPainterDialog {
                 if ((colorBiomeMap.hasColor(rgb))) {
                     biome = colorBiomeMap.getBiome(rgb);
                     exactPixels++;
+                } else if (adjacentOnly) {
+                    biome = null;
+                    if ((tolerance > 0.0)) {
+                        biome = colorBiomeMap.findNearestAdjacentBiome(climateImage, x, y, tolerance);
+                    }
+                    if ((biome != null)) {
+                        snappedPixels++;
+                    } else {
+                        biome = defaultBiome;
+                        unmappedPixels++;
+                    }
                 } else {
-                    biome = resolutionCache.computeIfAbsent(rgb, c -> colorBiomeMap.findNearestBiome(c, tolerance));
+                    biome = resolutionCache.computeIfAbsent(rgb, c -> {
+                        if ((tolerance > 0.0)) {
+                            return (colorBiomeMap.findNearestBiome(c, tolerance));
+                        }
+                        return (null);
+                    });
                     if ((biome != null)) {
                         snappedPixels++;
                     } else {
@@ -305,7 +371,8 @@ public class KoppainterDialog extends WorldPainterDialog {
                 + " | Unique colors: " + uniqueColors.size()
                 + " | Biomes: " + biomesFound.size();
         if ((snappedPixels > 0)) {
-            statsText += " | Coastline mixed: " + snappedPixels + " corrected";
+            statsText += " | Coastline mixed: " + snappedPixels
+                    + (adjacentOnly ? " corrected (adjacent)" : " corrected");
         }
         if ((unmappedPixels > 0)) {
             statsText += " | Unmapped: " + unmappedPixels
@@ -428,15 +495,15 @@ public class KoppainterDialog extends WorldPainterDialog {
         defaultBiomeSection.add(labelTolerancePrompt, gbcBiome);
 
         spinnerTolerance = new JSpinner(new SpinnerNumberModel(
-                (int) Math.round(colorBiomeMap.getColorTolerance()), 0, 100, 1));
+                (int) Math.round(colorBiomeMap.getColorTolerance()), 0, 255, 1));
         spinnerTolerance.setToolTipText(
-                "Margin of error in RGB distance for converting mixed coastline colors (0 = exact only)");
+                "Margin of error in Euclidean RGB distance for converting mixed coastline colors (0 = exact only, max 255)");
         spinnerTolerance.addChangeListener(e -> updatePreview());
 
         JPanel toleranceRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         toleranceRow.add(spinnerTolerance);
         JLabel labelToleranceHint = new JLabel(
-                "(Nearest-color margin of error for coastlines; clamped to prevent color misidentification)");
+                "(Nearest-color margin of error in Euclidean RGB distance, 0–255)");
         labelToleranceHint.setFont(labelToleranceHint.getFont().deriveFont(Font.ITALIC, 11.0f));
         labelToleranceHint.setForeground(Color.GRAY);
         toleranceRow.add(labelToleranceHint);
@@ -446,6 +513,26 @@ public class KoppainterDialog extends WorldPainterDialog {
         gbcBiome.fill = GridBagConstraints.HORIZONTAL;
         gbcBiome.weightx = 1.0;
         defaultBiomeSection.add(toleranceRow, gbcBiome);
+
+        checkAdjacentOnly = new JCheckBox("Adjacent only", false);
+        checkAdjacentOnly.setToolTipText(
+                "Restricts nearest-color matching to indexed colors physically adjacent (4-connected) to each pixel");
+        checkAdjacentOnly.addActionListener(e -> updatePreview());
+
+        JPanel adjacentRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        adjacentRow.add(checkAdjacentOnly);
+        JLabel labelAdjacentHint = new JLabel(
+                "(Checks 4 adjacent pixels for indexed colors; prevents false matches to gray polar biomes)");
+        labelAdjacentHint.setFont(labelAdjacentHint.getFont().deriveFont(Font.ITALIC, 11.0f));
+        labelAdjacentHint.setForeground(Color.GRAY);
+        adjacentRow.add(labelAdjacentHint);
+
+        gbcBiome.gridx = 1;
+        gbcBiome.gridy = 3;
+        gbcBiome.anchor = GridBagConstraints.WEST;
+        gbcBiome.fill = GridBagConstraints.HORIZONTAL;
+        gbcBiome.weightx = 1.0;
+        defaultBiomeSection.add(adjacentRow, gbcBiome);
 
         mainPanel.add(defaultBiomeSection);
         mainPanel.add(Box.createVerticalStrut(8));
@@ -458,7 +545,8 @@ public class KoppainterDialog extends WorldPainterDialog {
                 BorderFactory.createTitledBorder("3. Biome Preview"),
                 BorderFactory.createEmptyBorder(6, 8, 8, 8)));
 
-        JPanel previewControls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+        JPanel previewControls = new JPanel(new BorderLayout());
+        JPanel leftControls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
         radioShowBiomes = new JRadioButton("Minecraft Biomes", true);
         radioShowOriginal = new JRadioButton("Original Image", false);
         ButtonGroup viewGroup = new ButtonGroup();
@@ -468,9 +556,18 @@ public class KoppainterDialog extends WorldPainterDialog {
         radioShowBiomes.addActionListener(e -> updatePreviewDisplayMode());
         radioShowOriginal.addActionListener(e -> updatePreviewDisplayMode());
 
-        previewControls.add(new JLabel("View:"));
-        previewControls.add(radioShowBiomes);
-        previewControls.add(radioShowOriginal);
+        leftControls.add(new JLabel("View:"));
+        leftControls.add(radioShowBiomes);
+        leftControls.add(radioShowOriginal);
+        previewControls.add(leftControls, BorderLayout.WEST);
+
+        buttonExportPng = new JButton("Export PNG...");
+        buttonExportPng.setToolTipText("Export the generated Minecraft biome preview map as a PNG image file");
+        buttonExportPng.addActionListener(e -> promptExportBiomeMap());
+        JPanel rightControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
+        rightControls.add(buttonExportPng);
+        previewControls.add(rightControls, BorderLayout.EAST);
+
         previewSection.add(previewControls, BorderLayout.NORTH);
 
         previewPanel = new PreviewPanel();
@@ -510,6 +607,63 @@ public class KoppainterDialog extends WorldPainterDialog {
             previewPanel.setImage(climateImage);
         } else {
             previewPanel.setImage(biomePreviewImage);
+        }
+    }
+
+    private void promptExportBiomeMap() {
+        if ((biomePreviewImage == null)) {
+            JOptionPane.showMessageDialog(this,
+                    "No biome map has been generated yet. Please load a climate map image first.",
+                    "No Biome Map", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Export Biome Map as PNG");
+        fileChooser.setAcceptAllFileFilterUsed(false);
+        fileChooser.addChoosableFileFilter(new LosslessImageFilter("PNG Images (*.png)", "png"));
+
+        // Prepopulate default file name based on original image file name
+        String suggestedName = "biome-map.png";
+        if ((selectedFile != null)) {
+            String baseName = selectedFile.getName();
+            int dot = baseName.lastIndexOf('.');
+            if ((dot != -1)) {
+                baseName = baseName.substring(0, dot);
+            }
+            suggestedName = (baseName + "-biomes.png");
+            if (selectedFile.getParentFile().exists()) {
+                fileChooser.setCurrentDirectory(selectedFile.getParentFile());
+            }
+        }
+        fileChooser.setSelectedFile(new File(fileChooser.getCurrentDirectory(), suggestedName));
+
+        int result = fileChooser.showSaveDialog(this);
+        if ((result == JFileChooser.APPROVE_OPTION)) {
+            File chosen = fileChooser.getSelectedFile();
+            if ((chosen != null)) {
+                if ((!chosen.getName().toLowerCase().endsWith(".png"))) {
+                    chosen = new File(chosen.getParentFile(), chosen.getName() + ".png");
+                }
+                if (chosen.exists()) {
+                    int confirm = JOptionPane.showConfirmDialog(this,
+                            "File \"" + chosen.getName() + "\" already exists. Do you want to replace it?",
+                            "Confirm Overwrite", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                    if ((confirm != JOptionPane.YES_OPTION)) {
+                        return;
+                    }
+                }
+                try {
+                    exportBiomeMapAsPng(chosen);
+                    JOptionPane.showMessageDialog(this,
+                            "Biome map successfully exported to:\n" + chosen.getAbsolutePath(),
+                            "Export Successful", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception exception) {
+                    JOptionPane.showMessageDialog(this,
+                            "Failed to export biome map:\n" + exception.getMessage(),
+                            "Export Failed", JOptionPane.ERROR_MESSAGE);
+                }
+            }
         }
     }
 
@@ -572,12 +726,14 @@ public class KoppainterDialog extends WorldPainterDialog {
     private JLabel labelImageInfo;
     private JComboBox<BiomeEntry> comboDefaultBiome;
     private JSpinner spinnerTolerance;
+    private JCheckBox checkAdjacentOnly;
     private JRadioButton radioShowBiomes;
     private JRadioButton radioShowOriginal;
     private PreviewPanel previewPanel;
     private JLabel labelStats;
     private JButton buttonOk;
     private JButton buttonCancel;
+    private JButton buttonExportPng;
 
     private static final ColourScheme COLOUR_SCHEME = new HardcodedColourScheme();
 
