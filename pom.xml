@@ -128,6 +128,12 @@
                     <!-- Update this to the version of WorldPainter you wish to test with: -->
                     <version>2.25.0</version>
                     <scope>compile</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.jidesoft</groupId>
+                            <artifactId>jide-plaf-jdk7</artifactId>
+                        </exclusion>
+                    </exclusions>
                 </dependency>
             </dependencies>
             <build>
@@ -145,7 +151,8 @@
                             </execution>
                         </executions>
                         <configuration>
-                            <executable>java</executable>
+                            <executable>${java.home}/bin/java</executable>
+                            <classpathScope>test</classpathScope>
                             <arguments>
                                 <argument>-classpath</argument>
                                 <classpath/>
