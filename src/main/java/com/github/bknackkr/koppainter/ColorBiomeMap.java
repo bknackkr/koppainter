@@ -1,6 +1,7 @@
 package com.github.bknackkr.koppainter;
 
 import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -33,6 +34,9 @@ public final class ColorBiomeMap {
      */
     public ColorBiomeMap() {
         mappings = new LinkedHashMap<>();
+        nearestNeighborDistances = new LinkedHashMap<>();
+        colorTolerance = DEFAULT_COLOR_TOLERANCE;
+        neighborDistancesDirty = true;
     }
 
     /**
@@ -45,6 +49,9 @@ public final class ColorBiomeMap {
             throw new MDCCapturingRuntimeException("Initial mappings cannot be null");
         }
         mappings = new LinkedHashMap<>(initialMappings);
+        nearestNeighborDistances = new LinkedHashMap<>();
+        colorTolerance = DEFAULT_COLOR_TOLERANCE;
+        neighborDistancesDirty = true;
     }
 
     /**
@@ -137,6 +144,212 @@ public final class ColorBiomeMap {
     }
 
     /**
+     * Finds the biome whose defined color is closest to the given RGB color within the specified margin of error.
+     *
+     * <p>If an exact match exists, it is returned immediately. Otherwise, the nearest biome is returned only if
+     * the color distance does not exceed {@code maxTolerance} and satisfies neighbor separation safety limits.
+     * If the color is outside the margin of error, {@code null} is returned.</p>
+     *
+     * @param rgb The target RGB color.
+     * @param maxTolerance The maximum allowable Euclidean distance margin of error.
+     * @return The nearest biome entry within tolerance, or {@code null} if none matches.
+     */
+    public BiomeEntry findNearestBiome(int rgb, double maxTolerance) {
+        Integer matchedColor = findNearestColor(rgb, maxTolerance);
+        if ((matchedColor != null)) {
+            return (mappings.get(matchedColor));
+        }
+        return (null);
+    }
+
+    /**
+     * Finds the biome whose defined color is closest to the given {@link Color} within the specified margin of error.
+     *
+     * @param color The target color.
+     * @param maxTolerance The maximum allowable Euclidean distance margin of error.
+     * @return The nearest biome entry within tolerance, or {@code null} if none matches.
+     */
+    public BiomeEntry findNearestBiome(Color color, double maxTolerance) {
+        if ((color == null)) {
+            throw new MDCCapturingRuntimeException("Color cannot be null");
+        }
+        return (findNearestBiome(color.getRGB(), maxTolerance));
+    }
+
+    /**
+     * Finds the 24-bit RGB indexed color closest to the specified target color within the given margin of error,
+     * dynamically bounded so that similar indexed colors are never confused.
+     *
+     * <p>If an exact match exists, it is returned immediately (distance 0). Otherwise, the nearest indexed color
+     * is returned only if its Euclidean RGB distance does not exceed {@code maxTolerance}, and is strictly less
+     * than half the distance to that indexed color's closest neighbor in the palette. If the target color is
+     * outside this margin of error or is ambiguous between two colors, {@code null} is returned.</p>
+     *
+     * @param rgb The target 24-bit RGB color.
+     * @param maxTolerance The maximum allowable Euclidean distance margin of error.
+     * @return The 24-bit RGB integer of the matching indexed color, or {@code null} if no indexed color matches
+     *         within the safe margin of error.
+     */
+    public Integer findNearestColor(int rgb, double maxTolerance) {
+        if ((mappings.isEmpty())) {
+            return (null);
+        }
+        int targetRgb = (rgb & RGB_MASK);
+        if ((mappings.containsKey(targetRgb))) {
+            return (targetRgb);
+        }
+        if ((maxTolerance <= 0.0)) {
+            return (null);
+        }
+
+        int targetRed = ((targetRgb >> 16) & 0xFF);
+        int targetGreen = ((targetRgb >> 8) & 0xFF);
+        int targetBlue = (targetRgb & 0xFF);
+
+        Integer closestColor = null;
+        long smallestDistanceSquared = Long.MAX_VALUE;
+        long secondSmallestDistanceSquared = Long.MAX_VALUE;
+
+        for (Integer entryColor : mappings.keySet()) {
+            int redDiff = (((entryColor >> 16) & 0xFF) - targetRed);
+            int greenDiff = (((entryColor >> 8) & 0xFF) - targetGreen);
+            int blueDiff = ((entryColor & 0xFF) - targetBlue);
+            long distanceSquared = (((long) redDiff * redDiff)
+                    + ((long) greenDiff * greenDiff)
+                    + ((long) blueDiff * blueDiff));
+
+            if ((distanceSquared < smallestDistanceSquared)) {
+                secondSmallestDistanceSquared = smallestDistanceSquared;
+                smallestDistanceSquared = distanceSquared;
+                closestColor = entryColor;
+            } else if ((distanceSquared < secondSmallestDistanceSquared)) {
+                secondSmallestDistanceSquared = distanceSquared;
+            }
+        }
+
+        if ((closestColor == null)) {
+            return (null);
+        }
+
+        double distance = Math.sqrt((double) smallestDistanceSquared);
+        double effectiveTolerance = getEffectiveTolerance(closestColor, maxTolerance);
+
+        // Safe conversion condition: within effective tolerance and strictly closer than the second closest color
+        if (((distance <= effectiveTolerance)
+                && (smallestDistanceSquared < secondSmallestDistanceSquared))) {
+            return (closestColor);
+        }
+
+        return (null);
+    }
+
+    /**
+     * Finds the 24-bit RGB indexed color closest to the specified {@link Color} within the given margin of error.
+     *
+     * @param color The target color.
+     * @param maxTolerance The maximum allowable Euclidean distance margin of error.
+     * @return The 24-bit RGB integer of the matching indexed color, or {@code null} if none matches safely.
+     */
+    public Integer findNearestColor(Color color, double maxTolerance) {
+        if ((color == null)) {
+            throw new MDCCapturingRuntimeException("Color cannot be null");
+        }
+        return (findNearestColor(color.getRGB(), maxTolerance));
+    }
+
+    /**
+     * Returns the Euclidean RGB distance between the specified indexed color and its closest indexed neighbor.
+     *
+     * @param rgb The 24-bit RGB color.
+     * @return The distance to the nearest neighbor color, or {@link Double#POSITIVE_INFINITY} if only one or no colors
+     *         are defined, or {@code -1.0} if the specified color is not in this map.
+     */
+    public double getNearestNeighborDistance(int rgb) {
+        int targetRgb = (rgb & RGB_MASK);
+        if ((!mappings.containsKey(targetRgb))) {
+            return (-1.0);
+        }
+        ensureNeighborDistances();
+        Double dist = nearestNeighborDistances.get(targetRgb);
+        return (((dist != null) ? dist : Double.POSITIVE_INFINITY));
+    }
+
+    /**
+     * Calculates the effective tolerance (margin of error) for matching slightly-off colors against the specified
+     * indexed color, dynamically clamped so that similar indexed colors can never overlap or be misidentified.
+     *
+     * @param rgb The 24-bit RGB indexed color.
+     * @param maxTolerance The global maximum tolerance.
+     * @return The effective tolerance, clamped to strictly less than half the distance to the nearest neighbor.
+     */
+    public double getEffectiveTolerance(int rgb, double maxTolerance) {
+        if ((maxTolerance <= 0.0)) {
+            return (0.0);
+        }
+        int targetRgb = (rgb & RGB_MASK);
+        ensureNeighborDistances();
+        Double neighborDist = nearestNeighborDistances.get(targetRgb);
+        if ((neighborDist == null) || (Double.isInfinite(neighborDist))) {
+            return (maxTolerance);
+        }
+        // Clamped to strictly less than half the distance to the nearest neighbor
+        double maxSafeRadius = Math.max(0.0, ((neighborDist / 2.0) - 0.0001));
+        return (Math.min(maxTolerance, maxSafeRadius));
+    }
+
+    /**
+     * Converts slightly-off colors in the given image to the nearest indexed color within the specified tolerance.
+     *
+     * <p>Colors that are way off or ambiguous between similar indexed colors remain unchanged.</p>
+     *
+     * @param image The input image to process.
+     * @param maxTolerance The margin of error tolerance.
+     * @return A new {@link BufferedImage} containing the converted colors.
+     */
+    public BufferedImage convertToIndexedColors(BufferedImage image, double maxTolerance) {
+        if ((image == null)) {
+            throw new MDCCapturingRuntimeException("Image cannot be null");
+        }
+        int width = image.getWidth();
+        int height = image.getHeight();
+        BufferedImage result = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Map<Integer, Integer> colorCache = new LinkedHashMap<>();
+
+        for (int y = 0; (y < height); y++) {
+            for (int x = 0; (x < width); x++) {
+                int originalRgb = (image.getRGB(x, y) & RGB_MASK);
+                int convertedRgb = colorCache.computeIfAbsent(originalRgb, c -> {
+                    Integer matched = findNearestColor(c, maxTolerance);
+                    return (((matched != null) ? matched : c));
+                });
+                result.setRGB(x, y, convertedRgb);
+            }
+        }
+        return (result);
+    }
+
+    /**
+     * Returns the default color tolerance (margin of error) configured for this map.
+     *
+     * @return The color tolerance value in Euclidean RGB distance.
+     */
+    public double getColorTolerance() {
+        return (colorTolerance);
+    }
+
+    /**
+     * Sets the default color tolerance (margin of error) configured for this map.
+     *
+     * @param newColorTolerance The color tolerance value.
+     */
+    public void setColorTolerance(double newColorTolerance) {
+        if ((newColorTolerance < 0.0)) {
+            throw new MDCCapturingRuntimeException("Color tolerance cannot be negative: " + newColorTolerance);
+        }
+        colorTolerance = newColorTolerance;
+    }
+
+    /**
      * Checks whether an exact mapping exists for the specified RGB color.
      *
      * @param rgb The RGB color value (the alpha component is ignored).
@@ -197,6 +410,7 @@ public final class ColorBiomeMap {
             throw new MDCCapturingRuntimeException("Biome entry cannot be null for color 0x" + Integer.toHexString(rgb));
         }
         mappings.put((rgb & RGB_MASK), biome);
+        neighborDistancesDirty = true;
     }
 
     /**
@@ -218,7 +432,11 @@ public final class ColorBiomeMap {
      * @return The previous biome entry mapped to this color, or {@code null} if none.
      */
     public BiomeEntry remove(int rgb) {
-        return (mappings.remove((rgb & RGB_MASK)));
+        BiomeEntry removed = mappings.remove((rgb & RGB_MASK));
+        if ((removed != null)) {
+            neighborDistancesDirty = true;
+        }
+        return (removed);
     }
 
     /**
@@ -226,6 +444,8 @@ public final class ColorBiomeMap {
      */
     public void clear() {
         mappings.clear();
+        nearestNeighborDistances.clear();
+        neighborDistancesDirty = false;
     }
 
     /**
@@ -360,9 +580,52 @@ public final class ColorBiomeMap {
                 BiomeEntry biome = BiomeResolver.resolve(value);
                 mappings.put(rgb, biome);
             }
+            neighborDistancesDirty = true;
         } catch (IOException exception) {
             throw new MDCCapturingRuntimeException("Error reading color definitions from " + sourceDescription, exception);
         }
+    }
+
+    private void ensureNeighborDistances() {
+        if ((neighborDistancesDirty)) {
+            recomputeNeighborDistances();
+        }
+    }
+
+    private void recomputeNeighborDistances() {
+        nearestNeighborDistances.clear();
+        if ((mappings.size() <= 1)) {
+            for (Integer color : mappings.keySet()) {
+                nearestNeighborDistances.put(color, Double.POSITIVE_INFINITY);
+            }
+            neighborDistancesDirty = false;
+            return;
+        }
+
+        for (Integer color1 : mappings.keySet()) {
+            int r1 = ((color1 >> 16) & 0xFF);
+            int g1 = ((color1 >> 8) & 0xFF);
+            int b1 = (color1 & 0xFF);
+            long minDistanceSquared = Long.MAX_VALUE;
+
+            for (Integer color2 : mappings.keySet()) {
+                if ((color1.equals(color2))) {
+                    continue;
+                }
+                int rDiff = (((color2 >> 16) & 0xFF) - r1);
+                int gDiff = (((color2 >> 8) & 0xFF) - g1);
+                int bDiff = ((color2 & 0xFF) - b1);
+                long distanceSquared = (((long) rDiff * rDiff)
+                        + ((long) gDiff * gDiff)
+                        + ((long) bDiff * bDiff));
+                if ((distanceSquared < minDistanceSquared)) {
+                    minDistanceSquared = distanceSquared;
+                }
+            }
+
+            nearestNeighborDistances.put(color1, Math.sqrt((double) minDistanceSquared));
+        }
+        neighborDistancesDirty = false;
     }
 
     /**
@@ -615,6 +878,14 @@ public final class ColorBiomeMap {
     }
 
     private final Map<Integer, BiomeEntry> mappings;
+    private final Map<Integer, Double> nearestNeighborDistances;
+    private boolean neighborDistancesDirty;
+    private double colorTolerance;
+
+    /**
+     * Default Euclidean RGB distance tolerance (margin of error) for matching slightly-off colors.
+     */
+    public static final double DEFAULT_COLOR_TOLERANCE = 10.0;
 
     /**
      * Path to the bundled default color definition properties resource on the classpath.

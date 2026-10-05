@@ -72,7 +72,48 @@ public class KoppainterDialogTest {
         assertNotNull(dialog.getBiomePreviewImage());
         assertNotNull(dialog.getDefaultBiome());
         assertEquals(sampleFile, dialog.getSelectedFile());
+        assertEquals(10.0, dialog.getColorTolerance());
+        dialog.setColorTolerance(15.0);
+        assertEquals(15.0, dialog.getColorTolerance());
         assertFalse(dialog.isConfirmed());
+
+        dialog.dispose();
+    }
+
+    /**
+     * Verifies that the dialog preview translates slightly-off coastline colors to the appropriate biomes.
+     *
+     * @param tempDir JUnit temporary directory.
+     * @throws IOException If image file creation fails.
+     */
+    @Test
+    public void testPreviewSlightlyOffColors(@TempDir Path tempDir) throws IOException {
+        if ((GraphicsEnvironment.isHeadless())) {
+            return;
+        }
+
+        if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
+            org.pepsoft.worldpainter.Configuration.setInstance(new org.pepsoft.worldpainter.Configuration());
+        }
+
+        // Create an image with slightly-off desert color (FC0201 instead of FF0000)
+        BufferedImage sampleImage = new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; (y < 4); y++) {
+            for (int x = 0; (x < 4); x++) {
+                sampleImage.setRGB(x, y, 0xFC0201);
+            }
+        }
+        File sampleFile = tempDir.resolve("off_climate.png").toFile();
+        ImageIO.write(sampleImage, "png", sampleFile);
+
+        KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadDefault(), sampleFile);
+        BufferedImage preview = dialog.getBiomePreviewImage();
+        assertNotNull(preview);
+
+        // Preview should display the Desert biome display color (not fallback ocean)
+        BiomeEntry desert = BiomeResolver.resolve("desert");
+        int desertColor = KoppainterDialog.getBiomeColor(desert);
+        assertEquals(desertColor, preview.getRGB(0, 0));
 
         dialog.dispose();
     }

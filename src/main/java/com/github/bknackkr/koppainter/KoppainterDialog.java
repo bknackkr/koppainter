@@ -17,8 +17,10 @@ import java.awt.Window;
 import java.awt.event.ItemEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -35,7 +37,9 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
+import javax.swing.JSpinner;
 import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.border.EtchedBorder;
 import javax.swing.filechooser.FileFilter;
 import org.pepsoft.util.mdc.MDCCapturingRuntimeException;
@@ -145,6 +149,29 @@ public class KoppainterDialog extends WorldPainterDialog {
     }
 
     /**
+     * Returns the selected color tolerance (margin of error) for matching slightly-off colors.
+     *
+     * @return The color tolerance value in Euclidean RGB distance.
+     */
+    public double getColorTolerance() {
+        if ((spinnerTolerance == null)) {
+            return (ColorBiomeMap.DEFAULT_COLOR_TOLERANCE);
+        }
+        return (((Number) spinnerTolerance.getValue()).doubleValue());
+    }
+
+    /**
+     * Sets the color tolerance (margin of error) for matching slightly-off colors.
+     *
+     * @param tolerance The color tolerance value.
+     */
+    public void setColorTolerance(double tolerance) {
+        if ((spinnerTolerance != null)) {
+            spinnerTolerance.setValue((int) Math.round(tolerance));
+        }
+    }
+
+    /**
      * Confirms the dialog if a valid image has been loaded, or displays an alert prompting the user to select one.
      */
     @Override
@@ -234,26 +261,36 @@ public class KoppainterDialog extends WorldPainterDialog {
         }
 
         BiomeEntry defaultBiome = getDefaultBiome();
+        double tolerance = getColorTolerance();
         int width = climateImage.getWidth();
         int height = climateImage.getHeight();
 
         biomePreviewImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         Set<Integer> uniqueColors = new HashSet<>();
         Set<BiomeEntry> biomesFound = new HashSet<>();
+        int exactPixels = 0;
+        int snappedPixels = 0;
         int unmappedPixels = 0;
-        int mappedPixels = 0;
+
+        Map<Integer, BiomeEntry> resolutionCache = new HashMap<>();
 
         for (int y = 0; (y < height); y++) {
             for (int x = 0; (x < width); x++) {
                 int rgb = (climateImage.getRGB(x, y) & 0x00FFFFFF);
                 uniqueColors.add(rgb);
 
-                BiomeEntry biome = colorBiomeMap.getBiome(rgb);
-                if ((biome == null)) {
-                    biome = defaultBiome;
-                    unmappedPixels++;
+                BiomeEntry biome;
+                if ((colorBiomeMap.hasColor(rgb))) {
+                    biome = colorBiomeMap.getBiome(rgb);
+                    exactPixels++;
                 } else {
-                    mappedPixels++;
+                    biome = resolutionCache.computeIfAbsent(rgb, c -> colorBiomeMap.findNearestBiome(c, tolerance));
+                    if ((biome != null)) {
+                        snappedPixels++;
+                    } else {
+                        biome = defaultBiome;
+                        unmappedPixels++;
+                    }
                 }
 
                 biomesFound.add(biome);
@@ -267,8 +304,11 @@ public class KoppainterDialog extends WorldPainterDialog {
         String statsText = "Size: " + width + " × " + height
                 + " | Unique colors: " + uniqueColors.size()
                 + " | Biomes: " + biomesFound.size();
+        if ((snappedPixels > 0)) {
+            statsText += " | Coastline mixed: " + snappedPixels + " corrected";
+        }
         if ((unmappedPixels > 0)) {
-            statsText += " | Unmapped pixels: " + unmappedPixels
+            statsText += " | Unmapped: " + unmappedPixels
                     + " (defaulted to " + defaultBiome.getName() + ")";
             labelStats.setForeground(new Color(0xB8, 0x62, 0x00));
         } else {
@@ -335,11 +375,11 @@ public class KoppainterDialog extends WorldPainterDialog {
         mainPanel.add(Box.createVerticalStrut(8));
 
         // ---------------------------------------------------------------------
-        // Section 2: Default Biome
+        // Section 2: Default Biome & Tolerance
         // ---------------------------------------------------------------------
         JPanel defaultBiomeSection = new JPanel(new GridBagLayout());
         defaultBiomeSection.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createTitledBorder("2. Default Biome (For Unmapped Colors)"),
+                BorderFactory.createTitledBorder("2. Biome Mapping & Coastline Tolerance"),
                 BorderFactory.createEmptyBorder(6, 8, 8, 8)));
 
         GridBagConstraints gbcBiome = new GridBagConstraints();
@@ -371,13 +411,41 @@ public class KoppainterDialog extends WorldPainterDialog {
         defaultBiomeSection.add(comboDefaultBiome, gbcBiome);
 
         JLabel labelDefaultExplanation = new JLabel(
-                "Pixels with colors not defined in the color definition file will be assigned this biome.");
+                "Pixels with colors not defined or outside the tolerance margin will be assigned this biome.");
         labelDefaultExplanation.setFont(labelDefaultExplanation.getFont().deriveFont(Font.PLAIN, 11.0f));
         labelDefaultExplanation.setForeground(Color.GRAY);
         gbcBiome.gridx = 1;
         gbcBiome.gridy = 1;
         gbcBiome.anchor = GridBagConstraints.WEST;
         defaultBiomeSection.add(labelDefaultExplanation, gbcBiome);
+
+        JLabel labelTolerancePrompt = new JLabel("Color tolerance:");
+        gbcBiome.gridx = 0;
+        gbcBiome.gridy = 2;
+        gbcBiome.anchor = GridBagConstraints.WEST;
+        gbcBiome.fill = GridBagConstraints.NONE;
+        gbcBiome.weightx = 0.0;
+        defaultBiomeSection.add(labelTolerancePrompt, gbcBiome);
+
+        spinnerTolerance = new JSpinner(new SpinnerNumberModel(
+                (int) Math.round(colorBiomeMap.getColorTolerance()), 0, 100, 1));
+        spinnerTolerance.setToolTipText(
+                "Margin of error in RGB distance for converting mixed coastline colors (0 = exact only)");
+        spinnerTolerance.addChangeListener(e -> updatePreview());
+
+        JPanel toleranceRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        toleranceRow.add(spinnerTolerance);
+        JLabel labelToleranceHint = new JLabel(
+                "(Nearest-color margin of error for coastlines; clamped to prevent color misidentification)");
+        labelToleranceHint.setFont(labelToleranceHint.getFont().deriveFont(Font.ITALIC, 11.0f));
+        labelToleranceHint.setForeground(Color.GRAY);
+        toleranceRow.add(labelToleranceHint);
+
+        gbcBiome.gridx = 1;
+        gbcBiome.gridy = 2;
+        gbcBiome.fill = GridBagConstraints.HORIZONTAL;
+        gbcBiome.weightx = 1.0;
+        defaultBiomeSection.add(toleranceRow, gbcBiome);
 
         mainPanel.add(defaultBiomeSection);
         mainPanel.add(Box.createVerticalStrut(8));
@@ -503,6 +571,7 @@ public class KoppainterDialog extends WorldPainterDialog {
     private JButton buttonBrowse;
     private JLabel labelImageInfo;
     private JComboBox<BiomeEntry> comboDefaultBiome;
+    private JSpinner spinnerTolerance;
     private JRadioButton radioShowBiomes;
     private JRadioButton radioShowOriginal;
     private PreviewPanel previewPanel;

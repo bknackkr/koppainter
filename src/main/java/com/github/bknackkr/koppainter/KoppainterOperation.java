@@ -3,6 +3,8 @@ package com.github.bknackkr.koppainter;
 import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyVetoException;
+import java.util.HashMap;
+import java.util.Map;
 import javax.swing.SwingUtilities;
 import org.pepsoft.util.mdc.MDCCapturingRuntimeException;
 import org.pepsoft.worldpainter.Dimension;
@@ -68,19 +70,28 @@ public class KoppainterOperation extends AbstractOperation {
         ColorBiomeMap map = dialog.getColorBiomeMap();
         BiomeEntry defaultBiome = dialog.getDefaultBiome();
         int defaultBiomeId = ((defaultBiome != null) ? defaultBiome.getId() : 0);
+        double tolerance = dialog.getColorTolerance();
 
         int width = climate.getWidth();
         int height = climate.getHeight();
         int originX = (-(width / 2));
         int originY = (-(height / 2));
 
+        Map<Integer, Integer> biomeIdCache = new HashMap<>();
+
         for (int y = 0; (y < height); y++) {
             int worldY = (originY + y);
             for (int x = 0; (x < width); x++) {
                 int worldX = (originX + x);
                 int rgb = (climate.getRGB(x, y) & 0x00FFFFFF);
-                BiomeEntry biome = map.getBiome(rgb);
-                int biomeId = (((biome != null) && (biome.getId() >= 0)) ? biome.getId() : defaultBiomeId);
+
+                int biomeId = biomeIdCache.computeIfAbsent(rgb, color -> {
+                    BiomeEntry biome = map.getBiome(color);
+                    if ((biome == null) && (tolerance > 0.0)) {
+                        biome = map.findNearestBiome(color, tolerance);
+                    }
+                    return (((biome != null) && (biome.getId() >= 0)) ? biome.getId() : defaultBiomeId);
+                });
 
                 Tile tile = dimension.getTile((worldX >> 7), (worldY >> 7));
                 if ((tile != null)) {
