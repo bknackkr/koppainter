@@ -82,3 +82,9 @@ When loading color definitions, Köppainter checks in the following order:
 
 ## AI transparency statement
 I believe it is important for any user of this program to be aware that a non-trivial amount of code in this repository was written by generative AI. It is also important to clarify that code, and only code, was generated this way. All statements, opinions, and images are my own and I am opposed to the use of generative AI for the purposes of image generation and creative/informative writing. Yes, I know I'm a hypocrite. Thank you for reading.
+
+## Acknowledgements
+
+This project is a plugin for [WorldPainter](https://www.worldpainter.net/), an interactive map generator for Minecraft developed by Pepijn Schmitz ([pepsoft.org](https://www.pepsoft.org/)).
+
+WorldPainter is free and open-source software licensed under the [GNU General Public License, Version 3](https://www.gnu.org/licenses/gpl-3.0.html) (GPLv3). Its source code and license details can be found on [GitHub](https://github.com/Captain-Chaos/WorldPainter).
