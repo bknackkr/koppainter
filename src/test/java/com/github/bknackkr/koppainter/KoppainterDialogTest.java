@@ -209,6 +209,11 @@ public class KoppainterDialogTest {
         ImageIO.write(sampleImage, "png", sampleFile);
 
         KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadDefault(), sampleFile);
+        try {
+            javax.swing.SwingUtilities.invokeAndWait(() -> {});
+        } catch (Exception exception) {
+            // Wait for EDT to process the invokeLater progress updates
+        }
         assertNotNull((dialog.getProgressBar()));
         assertNotNull((dialog.getProgressLabel()));
         assertEquals((100), (dialog.getProgressBar().getValue()));
