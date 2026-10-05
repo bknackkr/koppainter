@@ -9,12 +9,15 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.Window;
 import java.awt.event.ItemEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.nio.file.Path;
@@ -33,11 +36,13 @@ import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
 import javax.swing.JRadioButton;
 import javax.swing.JSpinner;
 import javax.swing.JTextField;
@@ -51,7 +56,8 @@ import org.pepsoft.worldpainter.biomeschemes.StaticBiomeInfo;
 import org.pepsoft.worldpainter.colourschemes.HardcodedColourScheme;
 
 /**
- * Modal dialog for selecting a lossless climate map image, configuring a default biome fallback, and previewing the
+ * Modal dialog for selecting a lossless climate map image, configuring a
+ * default biome fallback, and previewing the
  * resulting Minecraft biomes.
  */
 public class KoppainterDialog extends WorldPainterDialog {
@@ -61,29 +67,63 @@ public class KoppainterDialog extends WorldPainterDialog {
      * @param parent The parent window relative to which this dialog is displayed.
      */
     public KoppainterDialog(Window parent) {
-        this(parent, ColorBiomeMap.loadUserOrDefault(null), null);
+        this(parent, ColorBiomeMap.loadUserOrDefault(null), (org.pepsoft.worldpainter.Dimension) null, null);
     }
 
     /**
      * Constructs a new {@code KoppainterDialog} with the specified color mappings.
      *
-     * @param parent The parent window.
+     * @param parent        The parent window.
      * @param colorBiomeMap The color-to-biome mappings to use for conversion.
      */
     public KoppainterDialog(Window parent, ColorBiomeMap colorBiomeMap) {
-        this(parent, colorBiomeMap, null);
+        this(parent, colorBiomeMap, (org.pepsoft.worldpainter.Dimension) null, null);
     }
 
     /**
-     * Constructs a new {@code KoppainterDialog} with specified mappings and an optional preselected image file.
+     * Constructs a new {@code KoppainterDialog} with specified mappings and an
+     * optional preselected image file.
      *
-     * @param parent The parent window.
-     * @param colorBiomeMap The color-to-biome mappings to use.
+     * @param parent          The parent window.
+     * @param colorBiomeMap   The color-to-biome mappings to use.
      * @param preselectedFile An optional preselected image file, or {@code null}.
      */
     public KoppainterDialog(Window parent, ColorBiomeMap colorBiomeMap, File preselectedFile) {
+        this(parent, colorBiomeMap, null, preselectedFile);
+    }
+
+    /**
+     * Constructs a new {@code KoppainterDialog} with specified mappings and a
+     * target WorldPainter dimension.
+     *
+     * @param parent        The parent window.
+     * @param colorBiomeMap The color-to-biome mappings to use.
+     * @param dimension     The target WorldPainter dimension to modify.
+     */
+    public KoppainterDialog(
+            Window parent,
+            ColorBiomeMap colorBiomeMap,
+            org.pepsoft.worldpainter.Dimension dimension) {
+        this(parent, colorBiomeMap, dimension, null);
+    }
+
+    /**
+     * Constructs a new {@code KoppainterDialog} with specified mappings, a target
+     * dimension, and an optional image.
+     *
+     * @param parent          The parent window.
+     * @param colorBiomeMap   The color-to-biome mappings to use.
+     * @param dimension       The target WorldPainter dimension to modify.
+     * @param preselectedFile An optional preselected image file, or {@code null}.
+     */
+    public KoppainterDialog(
+            Window parent,
+            ColorBiomeMap colorBiomeMap,
+            org.pepsoft.worldpainter.Dimension dimension,
+            File preselectedFile) {
         super(parent);
         this.colorBiomeMap = ((colorBiomeMap != null) ? colorBiomeMap : ColorBiomeMap.loadUserOrDefault(null));
+        this.dimension = dimension;
 
         initComponents();
 
@@ -102,7 +142,28 @@ public class KoppainterDialog extends WorldPainterDialog {
      * @return {@code true} if confirmed, {@code false} if cancelled.
      */
     public boolean isConfirmed() {
-        return (!isCancelled());
+        return (confirmed);
+    }
+
+    /**
+     * Returns whether the biomes have been successfully applied to the WorldPainter
+     * dimension.
+     *
+     * @return {@code true} if biomes have been applied, {@code false} otherwise.
+     */
+    public boolean isApplied() {
+        return (applied);
+    }
+
+    /**
+     * Returns whether the asynchronous biome application task is currently
+     * executing.
+     *
+     * @return {@code true} if biome application is in progress, {@code false}
+     *         otherwise.
+     */
+    public boolean isApplying() {
+        return (applying);
     }
 
     /**
@@ -151,7 +212,8 @@ public class KoppainterDialog extends WorldPainterDialog {
     }
 
     /**
-     * Returns the selected color tolerance (margin of error) for matching slightly-off colors.
+     * Returns the selected color tolerance (margin of error) for matching
+     * slightly-off colors.
      *
      * @return The color tolerance value in Euclidean RGB distance.
      */
@@ -174,18 +236,22 @@ public class KoppainterDialog extends WorldPainterDialog {
     }
 
     /**
-     * Checks whether nearest-color matching is restricted to the 4 orthogonal adjacent pixels.
+     * Checks whether nearest-color matching is restricted to the 4 orthogonal
+     * adjacent pixels.
      *
-     * @return {@code true} if adjacent-only mode is enabled, {@code false} otherwise.
+     * @return {@code true} if adjacent-only mode is enabled, {@code false}
+     *         otherwise.
      */
     public boolean isAdjacentOnly() {
         return ((checkAdjacentOnly != null) && checkAdjacentOnly.isSelected());
     }
 
     /**
-     * Sets whether nearest-color matching is restricted to the 4 orthogonal adjacent pixels.
+     * Sets whether nearest-color matching is restricted to the 4 orthogonal
+     * adjacent pixels.
      *
-     * @param adjacentOnly {@code true} to enable adjacent-only mode, {@code false} otherwise.
+     * @param adjacentOnly {@code true} to enable adjacent-only mode, {@code false}
+     *                     otherwise.
      */
     public void setAdjacentOnly(boolean adjacentOnly) {
         if ((checkAdjacentOnly != null)) {
@@ -221,21 +287,118 @@ public class KoppainterDialog extends WorldPainterDialog {
     }
 
     /**
-     * Confirms the dialog if a valid image has been loaded, or displays an alert prompting the user to select one.
+     * Returns the target WorldPainter dimension.
+     *
+     * @return The dimension, or {@code null} if none was specified.
+     */
+    public org.pepsoft.worldpainter.Dimension getDimension() {
+        return (dimension);
+    }
+
+    /**
+     * Sets the target WorldPainter dimension.
+     *
+     * @param dimension The dimension to apply biomes to.
+     */
+    public void setDimension(org.pepsoft.worldpainter.Dimension dimension) {
+        this.dimension = dimension;
+    }
+
+    /**
+     * Returns the progress bar embedded in this dialog.
+     *
+     * @return The progress bar.
+     */
+    public JProgressBar getProgressBar() {
+        return (progressBar);
+    }
+
+    /**
+     * Returns the action progress label embedded in this dialog.
+     *
+     * @return The progress action label.
+     */
+    public JLabel getProgressLabel() {
+        return (labelProgressAction);
+    }
+
+    /**
+     * Returns the persistent progress dialog displayed if this dialog is closed
+     * while an action is running.
+     *
+     * @return The persistent progress dialog, or {@code null} if none is currently
+     *         active.
+     */
+    public JDialog getPersistentProgressDialog() {
+        return (persistentProgressDialog);
+    }
+
+    /**
+     * Waits for the asynchronous biome application task to finish if currently
+     * running.
+     *
+     * @throws InterruptedException If the current thread is interrupted while
+     *                              waiting.
+     */
+    public void waitForApply() throws InterruptedException {
+        Thread thread = applyThread;
+        if ((thread != null)) {
+            thread.join();
+            if ((!javax.swing.SwingUtilities.isEventDispatchThread())) {
+                try {
+                    javax.swing.SwingUtilities.invokeAndWait(() -> {
+                        // Flushes any pending EDT invocations such as finishApplyBiomes
+                    });
+                } catch (java.lang.reflect.InvocationTargetException ignored) {
+                    // Safe to ignore empty runnable
+                }
+            }
+        }
+    }
+
+    /**
+     * Confirms the dialog if a valid image has been loaded, or displays an alert
+     * prompting the user to select one.
      */
     @Override
     public void ok() {
+        if ((applying)) {
+            return;
+        }
+
         if ((climateImage == null)) {
             JOptionPane.showMessageDialog(this,
                     "Please select a valid climate image file (PNG, BMP, TIFF, or TGA) before proceeding.",
                     "No Image Selected", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        super.ok();
+
+        if ((dimension == null)) {
+            confirmed = true;
+            super.ok();
+            return;
+        }
+
+        startApplyBiomesTask();
     }
 
     /**
-     * Sets the title of the dialog window, gracefully handling uninitialized WorldPainter configuration.
+     * Cancels the dialog or detaches to a persistent progress dialog if an
+     * application task is already in progress.
+     */
+    @Override
+    public void cancel() {
+        if (applying) {
+            handleWindowClosing();
+            return;
+        }
+        confirmed = false;
+        super.cancel();
+    }
+
+    /**
+     * Sets the title of the dialog window, gracefully handling uninitialized
+     * WorldPainter configuration.
      *
      * @param title The dialog title text.
      */
@@ -244,8 +407,10 @@ public class KoppainterDialog extends WorldPainterDialog {
         try {
             super.setTitle(title);
         } catch (NullPointerException exception) {
-            // Configuration.getInstance() may be null in headless or test environments where WorldPainter
-            // GUI is not running. Bypass WorldPainterDialog and set title directly on java.awt.Dialog.
+            // Configuration.getInstance() may be null in headless or test environments
+            // where WorldPainter
+            // GUI is not running. Bypass WorldPainterDialog and set title directly on
+            // java.awt.Dialog.
             try {
                 java.lang.reflect.Field titleField = java.awt.Dialog.class.getDeclaredField("title");
                 titleField.setAccessible(true);
@@ -285,6 +450,7 @@ public class KoppainterDialog extends WorldPainterDialog {
         if ((file == null) || (!file.exists())) {
             return;
         }
+        updateProgress(0, "Loading image: " + file.getName() + "...");
         try {
             BufferedImage loaded = ImageLoader.load(file);
             selectedFile = file;
@@ -296,6 +462,7 @@ public class KoppainterDialog extends WorldPainterDialog {
             labelImageInfo.setForeground(new Color(0x00, 0x7A, 0x00));
             updatePreview();
         } catch (MDCCapturingRuntimeException exception) {
+            updateProgress(0, "Failed to load image");
             JOptionPane.showMessageDialog(this,
                     "Failed to load image:\n" + exception.getMessage(),
                     "Error Loading Image", JOptionPane.ERROR_MESSAGE);
@@ -306,8 +473,11 @@ public class KoppainterDialog extends WorldPainterDialog {
         if ((climateImage == null)) {
             previewPanel.setImage(null);
             labelStats.setText("No climate image loaded.");
+            updateProgress(0, "Ready");
             return;
         }
+
+        updateProgress(0, "Generating biome preview...");
 
         BiomeEntry defaultBiome = getDefaultBiome();
         double tolerance = getColorTolerance();
@@ -383,11 +553,18 @@ public class KoppainterDialog extends WorldPainterDialog {
             labelStats.setForeground(new Color(0x00, 0x66, 0x00));
         }
         labelStats.setText(statsText);
+        updateProgress(100, "Preview ready (" + width + " × " + height + ")");
     }
 
     private void initComponents() {
-        setTitle("Import Köppen Climate Map");
-        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+        setTitle("Import Climate Map");
+        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                handleWindowClosing();
+            }
+        });
         setLayout(new BorderLayout(8, 8));
 
         JPanel mainPanel = new JPanel();
@@ -584,9 +761,26 @@ public class KoppainterDialog extends WorldPainterDialog {
         add(mainPanel, BorderLayout.CENTER);
 
         // ---------------------------------------------------------------------
-        // Section 4: Action Buttons (OK / Cancel)
+        // Section 4: Progress Bar & Action Buttons
         // ---------------------------------------------------------------------
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+        JPanel bottomPanel = new JPanel(new BorderLayout(8, 4));
+        bottomPanel.setBorder(BorderFactory.createEmptyBorder(6, 12, 8, 12));
+
+        JPanel progressPanel = new JPanel(new BorderLayout(4, 2));
+        labelProgressAction = new JLabel("Ready");
+        labelProgressAction.setFont(labelProgressAction.getFont().deriveFont(Font.PLAIN, 11.0f));
+
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setValue(0);
+        progressBar.setStringPainted(true);
+        progressBar.setString("");
+        progressBar.setPreferredSize(new Dimension(280, 20));
+
+        progressPanel.add(labelProgressAction, BorderLayout.NORTH);
+        progressPanel.add(progressBar, BorderLayout.CENTER);
+        bottomPanel.add(progressPanel, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         buttonCancel = new JButton("Cancel");
         buttonCancel.addActionListener(e -> cancel());
         buttonPanel.add(buttonCancel);
@@ -594,8 +788,9 @@ public class KoppainterDialog extends WorldPainterDialog {
         buttonOk = new JButton("OK");
         buttonOk.addActionListener(e -> ok());
         buttonPanel.add(buttonOk);
+        bottomPanel.add(buttonPanel, BorderLayout.EAST);
 
-        add(buttonPanel, BorderLayout.SOUTH);
+        add(bottomPanel, BorderLayout.SOUTH);
         getRootPane().setDefaultButton(buttonOk);
     }
 
@@ -667,8 +862,195 @@ public class KoppainterDialog extends WorldPainterDialog {
         }
     }
 
+    private void startApplyBiomesTask() {
+        applying = true;
+        confirmed = true;
+
+        if ((buttonOk != null)) {
+            buttonOk.setEnabled(false);
+        }
+        if ((buttonBrowse != null)) {
+            buttonBrowse.setEnabled(false);
+        }
+        if ((comboDefaultBiome != null)) {
+            comboDefaultBiome.setEnabled(false);
+        }
+        if ((spinnerTolerance != null)) {
+            spinnerTolerance.setEnabled(false);
+        }
+        if ((checkAdjacentOnly != null)) {
+            checkAdjacentOnly.setEnabled(false);
+        }
+        if ((buttonExportPng != null)) {
+            buttonExportPng.setEnabled(false);
+        }
+        if ((buttonCancel != null)) {
+            buttonCancel.setText("Close");
+        }
+
+        updateProgress(0, "Starting biome application...");
+
+        final BiomeEntry defaultBiome = getDefaultBiome();
+        final int defaultBiomeId = (((defaultBiome != null) && (defaultBiome.getId() >= 0)) ? defaultBiome.getId() : 0);
+        final double tolerance = getColorTolerance();
+        final boolean adjacentOnly = isAdjacentOnly();
+
+        // Run biome conversion on a worker thread so the UI thread remains responsive
+        // and repaints progress
+        applyThread = new Thread(() -> {
+            Throwable error = null;
+            try {
+                KoppainterOperation.applyBiomes(
+                        dimension,
+                        climateImage,
+                        colorBiomeMap,
+                        defaultBiomeId,
+                        tolerance,
+                        adjacentOnly,
+                        (percent, message) -> updateProgress(percent, message));
+            } catch (Throwable t) {
+                error = t;
+            }
+            final Throwable finalError = error;
+            javax.swing.SwingUtilities.invokeLater(() -> finishApplyBiomes(finalError));
+        }, "Koppainter-ApplyBiomes");
+        applyThread.start();
+    }
+
+    private void updateProgress(int percent, String message) {
+        Runnable updateRunnable = () -> {
+            if ((progressBar != null)) {
+                progressBar.setValue(percent);
+                progressBar.setString(percent + "%");
+            }
+            if ((labelProgressAction != null)) {
+                labelProgressAction.setText(message);
+            }
+            if ((persistentProgressBar != null)) {
+                persistentProgressBar.setValue(percent);
+                persistentProgressBar.setString(percent + "%");
+            }
+            if ((persistentActionLabel != null)) {
+                persistentActionLabel.setText(message);
+            }
+        };
+
+        if ((javax.swing.SwingUtilities.isEventDispatchThread())) {
+            updateRunnable.run();
+        } else {
+            javax.swing.SwingUtilities.invokeLater(updateRunnable);
+        }
+    }
+
+    private void finishApplyBiomes(Throwable error) {
+        applying = false;
+        if ((persistentProgressDialog != null)) {
+            persistentProgressDialog.dispose();
+            persistentProgressDialog = null;
+        }
+
+        if ((error != null)) {
+            updateProgress(0, "Error applying biomes");
+            if ((buttonOk != null)) {
+                buttonOk.setEnabled(true);
+            }
+            if ((buttonBrowse != null)) {
+                buttonBrowse.setEnabled(true);
+            }
+            if ((comboDefaultBiome != null)) {
+                comboDefaultBiome.setEnabled(true);
+            }
+            if ((spinnerTolerance != null)) {
+                spinnerTolerance.setEnabled(true);
+            }
+            if ((checkAdjacentOnly != null)) {
+                checkAdjacentOnly.setEnabled(true);
+            }
+            if ((buttonExportPng != null)) {
+                buttonExportPng.setEnabled(true);
+            }
+            if ((buttonCancel != null)) {
+                buttonCancel.setText("Cancel");
+            }
+
+            if ((!GraphicsEnvironment.isHeadless())) {
+                JOptionPane.showMessageDialog(this,
+                        "Failed to apply biomes:\n" + error.getMessage(),
+                        "Error Applying Biomes", JOptionPane.ERROR_MESSAGE);
+            }
+        } else {
+            applied = true;
+            updateProgress(100, "Biomes applied successfully");
+            super.ok();
+        }
+    }
+
+    private void handleWindowClosing() {
+        if ((applying)) {
+            // Main dialog is being closed while an operation is in progress.
+            // Hide the main dialog window and open a persistent progress dialog so the user
+            // can continue
+            // tracking progress until completion.
+            setVisible(false);
+            showPersistentProgressDialog();
+        } else {
+            cancel();
+        }
+    }
+
+    private void showPersistentProgressDialog() {
+        if ((GraphicsEnvironment.isHeadless())) {
+            return;
+        }
+        if ((persistentProgressDialog == null)) {
+            Window owner = getOwner();
+            persistentProgressDialog = new JDialog(owner, "Applying Biomes - Köppainter",
+                    java.awt.Dialog.ModalityType.MODELESS);
+            persistentProgressDialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+
+            JPanel panel = new JPanel(new BorderLayout(8, 8));
+            panel.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+
+            String initialAction = (((labelProgressAction != null) && (labelProgressAction.getText() != null))
+                    ? labelProgressAction.getText()
+                    : "Applying biomes...");
+            persistentActionLabel = new JLabel(initialAction);
+            persistentActionLabel.setFont(persistentActionLabel.getFont().deriveFont(Font.PLAIN, 12.0f));
+
+            persistentProgressBar = new JProgressBar(0, 100);
+            int currentVal = ((progressBar != null) ? progressBar.getValue() : 0);
+            String currentStr = ((progressBar != null) ? progressBar.getString() : "");
+            persistentProgressBar.setValue(currentVal);
+            persistentProgressBar.setStringPainted(true);
+            persistentProgressBar.setString(currentStr);
+            persistentProgressBar.setPreferredSize(new Dimension(340, 24));
+
+            JLabel noteLabel = new JLabel("Köppainter is applying biomes to the WorldPainter map in the background.");
+            noteLabel.setFont(noteLabel.getFont().deriveFont(Font.ITALIC, 11.0f));
+            noteLabel.setForeground(Color.GRAY);
+
+            panel.add(persistentActionLabel, BorderLayout.NORTH);
+            panel.add(persistentProgressBar, BorderLayout.CENTER);
+            panel.add(noteLabel, BorderLayout.SOUTH);
+
+            persistentProgressDialog.setContentPane(panel);
+            persistentProgressDialog.pack();
+            persistentProgressDialog.setLocationRelativeTo(this);
+        } else {
+            if (((labelProgressAction != null) && (persistentActionLabel != null))) {
+                persistentActionLabel.setText(labelProgressAction.getText());
+            }
+            if (((progressBar != null) && (persistentProgressBar != null))) {
+                persistentProgressBar.setValue(progressBar.getValue());
+                persistentProgressBar.setString(progressBar.getString());
+            }
+        }
+        persistentProgressDialog.setVisible(true);
+    }
+
     /**
-     * Determines the representative display color for the given biome entry in the preview window.
+     * Determines the representative display color for the given biome entry in the
+     * preview window.
      *
      * @param biome The biome entry.
      * @return The 24-bit RGB preview color.
@@ -696,7 +1078,8 @@ public class KoppainterDialog extends WorldPainterDialog {
     /**
      * Standalone entry point allowing direct testing and previewing of the dialog.
      *
-     * @param args Command-line arguments; optional first argument is an image file path to preload.
+     * @param args Command-line arguments; optional first argument is an image file
+     *             path to preload.
      */
     public static void main(String[] args) {
         if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
@@ -716,6 +1099,11 @@ public class KoppainterDialog extends WorldPainterDialog {
     }
 
     private final ColorBiomeMap colorBiomeMap;
+    private org.pepsoft.worldpainter.Dimension dimension;
+    private boolean confirmed;
+    private boolean applied;
+    private volatile boolean applying;
+    private Thread applyThread;
 
     private BufferedImage climateImage;
     private BufferedImage biomePreviewImage;
@@ -731,16 +1119,22 @@ public class KoppainterDialog extends WorldPainterDialog {
     private JRadioButton radioShowOriginal;
     private PreviewPanel previewPanel;
     private JLabel labelStats;
+    private JLabel labelProgressAction;
+    private JProgressBar progressBar;
     private JButton buttonOk;
     private JButton buttonCancel;
     private JButton buttonExportPng;
+    private JDialog persistentProgressDialog;
+    private JProgressBar persistentProgressBar;
+    private JLabel persistentActionLabel;
 
     private static final ColourScheme COLOUR_SCHEME = new HardcodedColourScheme();
+    private static final long serialVersionUID = 1L;
 
     private static class BiomeComboBoxRenderer extends DefaultListCellRenderer {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-                                                      boolean isSelected, boolean cellHasFocus) {
+                boolean isSelected, boolean cellHasFocus) {
             super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
             if ((value instanceof BiomeEntry biome)) {
                 setText(biome.getName() + " (" + biome.getModernId() + ")");
@@ -869,6 +1263,4 @@ public class KoppainterDialog extends WorldPainterDialog {
         private final String description;
         private final String[] extensions;
     }
-
-    private static final long serialVersionUID = 1L;
 }

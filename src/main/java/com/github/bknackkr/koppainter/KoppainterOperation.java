@@ -39,9 +39,10 @@ public class KoppainterOperation extends AbstractOperation {
     protected void activate() {
         try {
             Window parent = ((getView() != null) ? SwingUtilities.getWindowAncestor(getView()) : null);
-            KoppainterDialog dialog = new KoppainterDialog(parent, plugin.getColorBiomeMap());
+            Dimension dimension = getDimension();
+            KoppainterDialog dialog = new KoppainterDialog(parent, plugin.getColorBiomeMap(), dimension);
             dialog.setVisible(true);
-            if ((dialog.isConfirmed())) {
+            if ((dialog.isConfirmed()) && (!dialog.isApplied()) && (!dialog.isApplying())) {
                 applyBiomes(dialog);
             }
         } finally {
@@ -58,8 +59,11 @@ public class KoppainterOperation extends AbstractOperation {
         // No active background painting state to clean up upon deactivation
     }
 
-    private void applyBiomes(KoppainterDialog dialog) {
+    void applyBiomes(KoppainterDialog dialog) {
         Dimension dimension = getDimension();
+        if ((dimension == null)) {
+            dimension = dialog.getDimension();
+        }
         if ((dimension == null)) {
             return;
         }
@@ -73,12 +77,36 @@ public class KoppainterOperation extends AbstractOperation {
         double tolerance = dialog.getColorTolerance();
         boolean adjacentOnly = dialog.isAdjacentOnly();
 
+        applyBiomes(dimension, climate, map, defaultBiomeId, tolerance, adjacentOnly, null);
+    }
+
+    static void applyBiomes(
+            Dimension dimension,
+            BufferedImage climate,
+            ColorBiomeMap map,
+            int defaultBiomeId,
+            double tolerance,
+            boolean adjacentOnly) {
+        applyBiomes(dimension, climate, map, defaultBiomeId, tolerance, adjacentOnly, null);
+    }
+
+    static void applyBiomes(
+            Dimension dimension,
+            BufferedImage climate,
+            ColorBiomeMap map,
+            int defaultBiomeId,
+            double tolerance,
+            boolean adjacentOnly,
+            java.util.function.BiConsumer<Integer, String> progressConsumer) {
         int width = climate.getWidth();
         int height = climate.getHeight();
-        int originX = (-(width / 2));
-        int originY = (-(height / 2));
+        // Align the biome map origin (0, 0) with the top-left corner of the WorldPainter map
+        // so that the full extent of the climate image is mapped across positive coordinates.
+        int originX = 0;
+        int originY = 0;
 
         Map<Integer, Integer> biomeIdCache = new HashMap<>();
+        int lastPercent = -1;
 
         for (int y = 0; (y < height); y++) {
             int worldY = (originY + y);
@@ -108,6 +136,15 @@ public class KoppainterOperation extends AbstractOperation {
                 Tile tile = dimension.getTile((worldX >> 7), (worldY >> 7));
                 if ((tile != null)) {
                     tile.setLayerValue(Biome.INSTANCE, (worldX & 127), (worldY & 127), biomeId);
+                }
+            }
+
+            if ((progressConsumer != null)) {
+                int percent = (int) ((((y + 1) * 100.0)) / height);
+                if (((percent != lastPercent) || (y == (height - 1)))) {
+                    progressConsumer.accept(percent, "Applying biomes to map: row " + (y + 1) + " of " + height
+                            + " (" + percent + "%)");
+                    lastPercent = percent;
                 }
             }
         }

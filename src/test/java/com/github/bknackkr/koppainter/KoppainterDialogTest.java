@@ -8,6 +8,14 @@ import java.nio.file.Path;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.pepsoft.worldpainter.DefaultPlugin;
+import org.pepsoft.worldpainter.Dimension;
+import org.pepsoft.worldpainter.Terrain;
+import org.pepsoft.worldpainter.Tile;
+import org.pepsoft.worldpainter.TileFactory;
+import org.pepsoft.worldpainter.TileFactoryFactory;
+import org.pepsoft.worldpainter.World2;
+import org.pepsoft.worldpainter.layers.Biome;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -175,6 +183,142 @@ public class KoppainterDialogTest {
 
         dialog.setAdjacentOnly(false);
         assertFalse(dialog.isAdjacentOnly());
+
+        dialog.dispose();
+    }
+
+    /**
+     * Verifies that the embedded progress bar and action label initialize properly and update during preview.
+     *
+     * @param tempDir JUnit temporary directory.
+     * @throws IOException If image file creation fails.
+     */
+    @Test
+    public void testProgressBarAndActionLabel(@TempDir Path tempDir) throws IOException {
+        if ((GraphicsEnvironment.isHeadless())) {
+            return;
+        }
+
+        if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
+            org.pepsoft.worldpainter.Configuration.setInstance(new org.pepsoft.worldpainter.Configuration());
+        }
+
+        BufferedImage sampleImage = new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB);
+        sampleImage.setRGB(0, 0, 0xFF0000);
+        File sampleFile = tempDir.resolve("progress_test.png").toFile();
+        ImageIO.write(sampleImage, "png", sampleFile);
+
+        KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadDefault(), sampleFile);
+        assertNotNull((dialog.getProgressBar()));
+        assertNotNull((dialog.getProgressLabel()));
+        assertEquals((100), (dialog.getProgressBar().getValue()));
+        assertTrue((dialog.getProgressLabel().getText().contains("Preview ready")));
+
+        dialog.dispose();
+    }
+
+    /**
+     * Verifies that confirming the dialog with a target dimension runs the background apply task and sets applied.
+     *
+     * @param tempDir JUnit temporary directory.
+     * @throws IOException If image file creation fails.
+     * @throws InterruptedException If waiting for the apply task is interrupted.
+     */
+    @Test
+    public void testApplyBiomesTaskWithProgress(@TempDir Path tempDir) throws IOException, InterruptedException {
+        if ((GraphicsEnvironment.isHeadless())) {
+            return;
+        }
+
+        if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
+            org.pepsoft.worldpainter.Configuration.setInstance(new org.pepsoft.worldpainter.Configuration());
+        }
+
+        TileFactory tileFactory = TileFactoryFactory.createFlatTileFactory(
+                0L,
+                Terrain.GRASS,
+                0,
+                256,
+                62,
+                62,
+                false,
+                false
+        );
+        World2 world = new World2(DefaultPlugin.JAVA_ANVIL, 0L, tileFactory);
+        Dimension dimension = world.getDimension(Dimension.Anchor.NORMAL_DETAIL);
+        Tile tile00 = new Tile(0, 0, 0, 256);
+        dimension.addTile(tile00);
+
+        BufferedImage sampleImage = new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB);
+        sampleImage.setRGB(0, 0, 0xFF0000); // Desert (id 2)
+        File sampleFile = tempDir.resolve("apply_task_test.png").toFile();
+        ImageIO.write(sampleImage, "png", sampleFile);
+
+        KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadDefault(), dimension, sampleFile);
+        assertFalse((dialog.isApplying()));
+        assertFalse((dialog.isApplied()));
+
+        dialog.ok();
+        dialog.waitForApply();
+
+        assertTrue((dialog.isConfirmed()));
+        assertTrue((dialog.isApplied()));
+        assertFalse((dialog.isApplying()));
+        assertEquals((2), (tile00.getLayerValue(Biome.INSTANCE, 0, 0)));
+
+        dialog.dispose();
+    }
+
+    /**
+     * Verifies that closing or cancelling the dialog window during biome application persists the background task.
+     *
+     * @param tempDir JUnit temporary directory.
+     * @throws IOException If image file creation fails.
+     * @throws InterruptedException If waiting for the apply task is interrupted.
+     */
+    @Test
+    public void testCloseWindowWhileApplyingShowsPersistentProgress(@TempDir Path tempDir)
+            throws IOException, InterruptedException {
+        if ((GraphicsEnvironment.isHeadless())) {
+            return;
+        }
+
+        if ((org.pepsoft.worldpainter.Configuration.getInstance() == null)) {
+            org.pepsoft.worldpainter.Configuration.setInstance(new org.pepsoft.worldpainter.Configuration());
+        }
+
+        TileFactory tileFactory = TileFactoryFactory.createFlatTileFactory(
+                0L,
+                Terrain.GRASS,
+                0,
+                256,
+                62,
+                62,
+                false,
+                false
+        );
+        World2 world = new World2(DefaultPlugin.JAVA_ANVIL, 0L, tileFactory);
+        Dimension dimension = world.getDimension(Dimension.Anchor.NORMAL_DETAIL);
+        Tile tile00 = new Tile(0, 0, 0, 256);
+        dimension.addTile(tile00);
+
+        BufferedImage sampleImage = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB);
+        sampleImage.setRGB(0, 0, 0xFF0000);
+        File sampleFile = tempDir.resolve("persistent_dialog_test.png").toFile();
+        ImageIO.write(sampleImage, "png", sampleFile);
+
+        KoppainterDialog dialog = new KoppainterDialog(null, ColorBiomeMap.loadDefault(), dimension, sampleFile);
+        dialog.ok();
+
+        // Simulate closing the window while task is active
+        dialog.cancel();
+
+        // Verify the persistent progress dialog was created to monitor progress
+        assertNotNull((dialog.getPersistentProgressDialog()));
+
+        // The background apply task must persist until completion
+        dialog.waitForApply();
+        assertTrue((dialog.isApplied()));
 
         dialog.dispose();
     }
